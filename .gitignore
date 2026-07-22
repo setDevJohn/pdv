@@ -5,6 +5,7 @@ build/
 *.local
 .DS_Store
 npm-debug.log*
+*.tsbuildinfo
 
 # Prisma
 apps/api/generated/

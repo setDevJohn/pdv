@@ -1,19 +1,21 @@
 # Dockerfile — apps/web (React + Tailwind)
-# Ajustar caminhos quando a estrutura real do monorepo for criada.
+# Build context: raiz do monorepo (ver docker-compose.yml) — usa npm workspaces.
 
 FROM node:20-alpine AS base
 WORKDIR /app
 
 FROM base AS deps
-COPY package*.json ./
+COPY package.json package-lock.json ./
+COPY apps/web/package.json apps/web/package.json
+COPY packages/shared-types/package.json packages/shared-types/package.json
+COPY packages/ui/package.json packages/ui/package.json
 RUN npm ci
 
-FROM base AS build
-COPY --from=deps /app/node_modules ./node_modules
+FROM deps AS build
 COPY . .
-RUN npm run build
+RUN npm run build --workspace=apps/web
 
 FROM nginx:alpine AS runtime
-COPY --from=build /app/dist /usr/share/nginx/html
+COPY --from=build /app/apps/web/dist /usr/share/nginx/html
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
