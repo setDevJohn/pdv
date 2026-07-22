@@ -21,6 +21,10 @@ services:
     environment:
       DATABASE_URL: postgresql://pdv:pdv@db:5432/pdv
       NODE_ENV: development
+      WEB_URL: ${WEB_URL:-http://localhost:5173}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?defina JWT_ACCESS_SECRET no .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?defina JWT_REFRESH_SECRET no .env}
+      JWT_GERENTE_SECRET: ${JWT_GERENTE_SECRET:?defina JWT_GERENTE_SECRET no .env}
     ports:
       - "3000:3000"
     depends_on:

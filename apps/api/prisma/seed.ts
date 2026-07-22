@@ -3,26 +3,27 @@
 //
 // Idempotente (usa upsert) — pode rodar mais de uma vez sem duplicar dados.
 //
-// NOTA: os hashes de senha/código de gerente aqui são placeholders de
-// desenvolvimento. O algoritmo de hash definitivo (bcrypt/argon2) é decidido
-// no checkpoint de segurança (Fase 2) e este seed deve ser atualizado então.
+// Login de teste: slug "mercadinho-exemplo", admin@exemplo.com / senha123
+// (Vendedor: vendedor@exemplo.com / senha123). Código de gerente: 1234.
 import 'dotenv/config'
 import { PrismaPg } from '@prisma/adapter-pg'
+import bcrypt from 'bcryptjs'
 import { PrismaClient } from '../src/generated/prisma/client'
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
 })
 
-const DEV_PASSWORD_HASH = 'dev-placeholder-hash'
-const DEV_MANAGER_CODE_HASH = 'dev-placeholder-hash'
-
 async function main() {
+  const senhaHash = await bcrypt.hash('senha123', 12)
+  const codigoGerenteHash = await bcrypt.hash('1234', 12)
+
   const empresa = await prisma.empresa.upsert({
     where: { documento: '00000000000191' },
     update: {},
     create: {
       nome: 'Mercadinho Exemplo',
+      slug: 'mercadinho-exemplo',
       documento: '00000000000191',
       assinatura: {
         create: {
@@ -42,7 +43,7 @@ async function main() {
       id: `${empresa.id}-loja-principal`,
       empresaId: empresa.id,
       nome: 'Loja Principal',
-      codigoGerenteHash: DEV_MANAGER_CODE_HASH,
+      codigoGerenteHash,
     },
   })
 
@@ -53,7 +54,7 @@ async function main() {
       empresaId: empresa.id,
       nome: 'Admin Exemplo',
       email: 'admin@exemplo.com',
-      senhaHash: DEV_PASSWORD_HASH,
+      senhaHash,
       lojas: { create: { lojaId: loja.id, perfil: 'ADMIN' } },
     },
   })
@@ -65,7 +66,7 @@ async function main() {
       empresaId: empresa.id,
       nome: 'Vendedor Exemplo',
       email: 'vendedor@exemplo.com',
-      senhaHash: DEV_PASSWORD_HASH,
+      senhaHash,
       lojas: { create: { lojaId: loja.id, perfil: 'VENDEDOR' } },
     },
   })

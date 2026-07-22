@@ -79,6 +79,9 @@ enum StatusAssinatura {
 model Empresa {
   id        String   @id @default(uuid())
   nome      String
+  // Identificador legível usado no login (e futuramente em subdomínio, ex.:
+  // mercadinho-exemplo.dominio.com.br). Único, gerado a partir do nome no cadastro.
+  slug      String   @unique
   documento String?  @unique // CNPJ/CPF do titular da conta
   criadoEm  DateTime @default(now())
   atualizadoEm DateTime @updatedAt

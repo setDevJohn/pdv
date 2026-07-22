@@ -18,6 +18,43 @@ Formato de cada entrada:
 
 <!-- Novas entradas entram abaixo desta linha, mais recente no topo -->
 
+## [Autenticação e permissões] - 2026-07-22
+### Adicionado
+- Login por `slug` da empresa + e-mail + senha (`POST /auth/login`), com refresh token
+  em cookie httpOnly e access token curto no corpo da resposta.
+- `GET /empresas/resolver?slug=` público: resolve a empresa pelo slug (para o front
+  detectar via subdomínio e cair no campo manual como fallback), sem vazar dados internos.
+- `POST /auth/refresh` (renova via cookie), `POST /auth/logout`, `POST /auth/trocar-loja`
+  (reemite o token com a loja escolhida, validando o vínculo em `UsuarioLoja`).
+- `POST /auth/validar-codigo-gerente`: valida o código contra o hash da loja e devolve um
+  "gerente-token" de curta duração que autoriza uma ação específica; grava em `LogAuditoria`.
+- Guards globais: `JwtAuthGuard` (nega por padrão, exceção via `@Public()`), `RolesGuard`
+  (`@Roles(ADMIN|VENDEDOR)`), `GerenteGuard` (`@RequerGerente('ACAO')`); decorator
+  `@CurrentUser()`. `HashService` (bcryptjs, custo 12) para senha e código de gerente.
+- Campo `slug` (único) em `Empresa` + migration; seed atualizado com hash real
+  (login de teste: slug `mercadinho-exemplo`, `admin@exemplo.com` / `senha123`,
+  código de gerente `1234`).
+- 32 testes unitários (auth service, três guards, empresas service, hash service).
+### Decisões técnicas
+- Isolamento de login por empresa: e-mail é único por empresa (`@@unique([empresaId, email])`),
+  então o login exige o slug — o mesmo e-mail pode existir em empresas diferentes.
+- Loja ativa vive como claim no JWT (`lojaAtivaId`/`perfil`), evitando ir ao banco a cada
+  request; usuário com uma única loja já entra com ela selecionada, com mais de uma escolhe
+  via `trocar-loja`. O refresh revalida o vínculo — acesso revogado cai no próximo refresh.
+- Três segredos JWT distintos (access/refresh/gerente), nunca reaproveitados, passados
+  explicitamente em cada sign/verify (JwtModule sem secret global).
+- `bcryptjs` (JS puro) em vez de `bcrypt` nativo: evita toolchain de compilação nativa na
+  imagem Alpine, mantendo o mesmo algoritmo.
+- Rate limit global via `@nestjs/throttler` (60/min), com limites mais baixos em login
+  (10/min) e código de gerente (5/min, por ser um PIN curto).
+- `ValidationPipe` global com `whitelist`+`forbidNonWhitelisted` (rejeita campos não
+  esperados no body) e CORS restrito ao `WEB_URL` com credenciais habilitadas (cookie).
+### Critério de aceite
+- `npm test` (32 passam) e `npm run test:e2e` (1 passa) verdes; `npm run build` compila.
+- Fluxo validado ponta a ponta (local e via `docker compose`): resolver empresa, login
+  correto/incorreto, rota protegida sem token (401), troca de loja (vínculo válido/inválido),
+  código de gerente correto/incorreto, refresh e logout — com entrada em `LogAuditoria`.
+
 ## [Bootstrap do monorepo] - 2026-07-21
 ### Adicionado
 - `package.json` raiz com npm workspaces (`apps/*`, `packages/*`).
