@@ -96,9 +96,12 @@ model Assinatura {
   empresaId String           @unique
   plano     PlanoTipo
   status    StatusAssinatura @default(TRIAL)
-  // Trial de 7 dias com inserções limitadas: quando começou e o teto de inserções.
+  // Trial de 7 dias com inserções limitadas: quando começou, o teto de inserções
+  // e quantas já foram usadas (incrementado por rota decorada com
+  // @ContarInsercaoTrial — ver TrialGuard).
   trialIniciadoEm    DateTime?
   trialLimiteInsercoes Int?
+  trialInsercoesUsadas Int @default(0)
   // Cobrança soma o valor por loja no mesmo plano, com desconto por loja adicional.
   descontoMultilojaPct Decimal @default(0) @db.Decimal(5, 2)
   vigenteAte DateTime?

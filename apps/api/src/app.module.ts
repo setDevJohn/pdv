@@ -7,6 +7,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { HashModule } from './common/hash/hash.module';
 import { AuthModule } from './auth/auth.module';
 import { EmpresasModule } from './empresas/empresas.module';
+import { AssinaturaModule } from './assinatura/assinatura.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { EmpresasModule } from './empresas/empresas.module';
     HashModule,
     AuthModule,
     EmpresasModule,
+    AssinaturaModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

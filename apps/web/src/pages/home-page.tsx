@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useAuthStore } from '@/stores/auth-store'
 import { useLogout } from '@/hooks/use-logout'
+import { TrialBanner } from '@/components/trial/trial-banner'
 
 // Placeholder pós-login — cada feature da Fase 3 (produtos, caixa, frente de
 // caixa...) substitui isto por telas reais atrás desta mesma rota protegida.
@@ -26,6 +27,7 @@ export function HomePage() {
           Sair
         </Button>
       </header>
+      <TrialBanner />
       <p className="text-sm text-muted-foreground">
         As telas de frente de caixa, estoque e caixa entram aqui nas próximas features.
       </p>

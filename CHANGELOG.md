@@ -18,6 +18,36 @@ Formato de cada entrada:
 
 <!-- Novas entradas entram abaixo desta linha, mais recente no topo -->
 
+## [Trial de 7 dias com inserções limitadas] - 2026-07-22
+### Adicionado
+- Coluna `Assinatura.trialInsercoesUsadas` (contador) + migration.
+- `AssinaturaService`: calcula o status do trial (dias restantes, inserções usadas/limite,
+  expirado por tempo ou por cota) e consome inserções de forma atômica.
+- `GET /assinatura` (protegido, qualquer perfil): status do trial para o banner do front.
+- `TrialGuard` + decorator `@ContarInsercaoTrial()`: guard global que, em rotas marcadas,
+  consome uma inserção da assinatura em TRIAL e bloqueia (403) quando o prazo/cota estoura;
+  fora do trial não afeta nada. Mecanismo pronto para as features que criam registro
+  (produto, venda) o decorarem.
+- Frontend: `TrialBanner` na home (níveis info/alerta/expirado usando os tokens do design
+  system), com a lógica de exibição isolada em `montarConteudoTrial` para ser testável.
+- 14 testes novos de backend + 7 de frontend cobrindo os cálculos e regras do trial.
+### Decisões técnicas
+- Consumo de inserção é atômico via `updateMany` com condição `trialInsercoesUsadas < limite`
+  na própria query: se `count` volta 0, uma requisição concorrente já esgotou a cota e a
+  inserção é barrada — evita ultrapassar o limite sob concorrência.
+- Trade-off assumido: a inserção é consumida no guard (antes do handler), então uma criação
+  que falhe por outro motivo ainda gasta cota. Aceitável no MVP; migrar para interceptor
+  (só em sucesso) se incomodar na prática.
+- `GET /assinatura` calcula tudo on-the-fly e não persiste transição de status
+  (TRIAL→expirado) — isso é responsabilidade da futura feature de Cobrança/planos.
+- Escopo consciente: nenhuma rota decora `@ContarInsercaoTrial()` ainda porque as telas que
+  criam registro (produtos, vendas) só chegam nas próximas features — o mecanismo é entregue
+  testado, como foi feito com os guards de RBAC na Fase 2a antes de existir rota restrita.
+### Critério de aceite
+- `npm test` verde em ambos (`apps/api`: 47, `apps/web`: 31) e `npm run build`/`lint` limpos.
+- Validado ponta a ponta via `docker compose`: login completo pela UI num Chrome headless
+  real exibindo o banner "Período de teste — 7 dias restantes · 0/50 inserções usadas".
+
 ## [Login e multiempresa (frontend)] - 2026-07-22
 ### Adicionado
 - Tela de login em dois passos: identificação da empresa (detecção automática por
