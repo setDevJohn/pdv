@@ -1,0 +1,41 @@
+# docker-compose.yml — orquestra web, api e banco para rodar o ambiente completo localmente.
+# Ajustar nomes de serviço/portas quando a estrutura real do monorepo for definida.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pdv
+      POSTGRES_PASSWORD: pdv
+      POSTGRES_DB: pdv
+    ports:
+      - "5432:5432"
+    volumes:
+      - pdv_db_data:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: ./apps/api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://pdv:pdv@db:5432/pdv
+      NODE_ENV: development
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+
+  web:
+    build:
+      context: ./apps/web
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: http://localhost:3000
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
+volumes:
+  pdv_db_data:
