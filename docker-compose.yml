@@ -34,9 +34,12 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      # VITE_API_URL precisa ser build arg, não env de runtime: o bundle é
+      # estático (servido pelo nginx) e o Vite já embutiu o valor no build.
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+        VITE_BASE_DOMAIN: ${VITE_BASE_DOMAIN:-}
     restart: unless-stopped
-    environment:
-      VITE_API_URL: http://localhost:3000
     ports:
       - "5173:80"
     depends_on:

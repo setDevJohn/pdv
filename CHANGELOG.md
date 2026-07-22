@@ -18,6 +18,41 @@ Formato de cada entrada:
 
 <!-- Novas entradas entram abaixo desta linha, mais recente no topo -->
 
+## [Login e multiempresa (frontend)] - 2026-07-22
+### Adicionado
+- Tela de login em dois passos: identificação da empresa (detecção automática por
+  subdomínio via `VITE_BASE_DOMAIN`, com fallback manual de slug) e depois e-mail/senha.
+- Tela de seleção de loja (`/selecionar-loja`), para usuários com acesso a mais de uma
+  loja — login já entra direto quando só há uma.
+- Home autenticada (placeholder): saudação, loja/perfil ativos, botão de sair. Base para as
+  próximas features (frente de caixa, estoque, caixa) entrarem atrás da mesma rota protegida.
+- Sessão restaurada automaticamente após F5 (`SessionBootstrap`, via `/auth/refresh`), já
+  que o access token vive só em memória (decisão da Fase 2a contra XSS).
+- Infra de app: React Router (rotas públicas/protegidas), Zustand (`authStore`), TanStack
+  Query (mutations de login/logout/trocar-loja), Axios com interceptor de header
+  `Authorization` + retry automático em 401 via refresh (uma renovação por vez).
+- 24 testes de frontend (subdomínio, authStore, fluxo completo do LoginPage).
+### Decisões técnicas
+- Cliente HTTP: Axios (troca do wrapper `fetch` inicialmente cogitado, a pedido do usuário).
+- **Correção de bug da Fase 0**: `VITE_API_URL` estava como env de *runtime* do container
+  `web` no `docker-compose.yml`, mas o build do Vite é estático — isso nunca teve efeito
+  algum. Corrigido para build arg (`args:` no compose + `ARG`/`ENV` no Dockerfile), mesmo
+  tratamento dado a `VITE_BASE_DOMAIN`.
+- **Ajuste de backend da Fase 2a**: `POST /auth/refresh` passou a devolver o mesmo formato do
+  login (`usuario`, `lojas`, `lojaAtivaId`), não só o token — o bootstrap de sessão no front
+  precisa dessa informação para reconstruir a UI após um F5, e antes só existia a Fase 2a
+  tinha isso disponível via login. Testes do backend atualizados (33 passam).
+- Detecção de subdomínio compara contra um domínio-base configurado (`VITE_BASE_DOMAIN`) em
+  vez de tentar inferir a estrutura de qualquer TLD — heurística por contagem de labels
+  quebra com TLDs compostos como `.com.br`, pego por teste antes de ir pra produção.
+- Sem `react-hook-form`/`zod` por ora: formulário de login é pequeno o bastante para
+  `useState` simples: reavaliar quando cadastro de produto (formulário maior) chegar.
+### Critério de aceite
+- `npm run build`, `npm test` e `npm run lint` verdes em `apps/web` e `apps/api`.
+- Validado ponta a ponta via `docker compose` completo: CORS + cookie httpOnly checados com
+  `curl` simulando um browser (Origin cross-port), e renderização real via Chrome headless
+  confirmando o redirecionamento para `/login` e o formulário renderizado.
+
 ## [Design system] - 2026-07-22
 ### Adicionado
 - Tokens de tema em `apps/web/src/index.css`: azul Fluent (`#0F6CBD`/`#479EF5`) como cor

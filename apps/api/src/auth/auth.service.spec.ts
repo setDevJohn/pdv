@@ -198,13 +198,41 @@ describe('AuthService', () => {
         { sub: 'usuario-1', tipo: 'refresh', lojaAtivaId: 'loja-1' },
         { secret: 'refresh-secret' },
       );
-      prisma.usuario.findUnique.mockResolvedValue({ id: 'usuario-1', empresaId: 'empresa-1', ativo: true });
-      prisma.usuarioLoja.findUnique.mockResolvedValue(null);
+      prisma.usuario.findUnique.mockResolvedValue({
+        id: 'usuario-1',
+        nome: 'Admin',
+        email: 'admin@exemplo.com',
+        empresaId: 'empresa-1',
+        ativo: true,
+        lojas: [], // vínculo com loja-1 não existe mais
+      });
 
-      const tokens = await service.refresh(refreshToken);
+      const resultado = await service.refresh(refreshToken);
 
-      const payload = jwtService.decode<{ lojaAtivaId?: string }>(tokens.accessToken);
+      expect(resultado.lojaAtivaId).toBeUndefined();
+      const payload = jwtService.decode<{ lojaAtivaId?: string }>(resultado.accessToken);
       expect(payload?.lojaAtivaId).toBeUndefined();
+    });
+
+    it('mantém a loja ativa e devolve usuario/lojas quando o vínculo ainda existe', async () => {
+      const refreshToken = jwtService.sign(
+        { sub: 'usuario-1', tipo: 'refresh', lojaAtivaId: 'loja-1' },
+        { secret: 'refresh-secret' },
+      );
+      prisma.usuario.findUnique.mockResolvedValue({
+        id: 'usuario-1',
+        nome: 'Admin',
+        email: 'admin@exemplo.com',
+        empresaId: 'empresa-1',
+        ativo: true,
+        lojas: [{ lojaId: 'loja-1', perfil: PerfilAcesso.ADMIN, loja: { nome: 'Loja 1' } }],
+      });
+
+      const resultado = await service.refresh(refreshToken);
+
+      expect(resultado.lojaAtivaId).toBe('loja-1');
+      expect(resultado.usuario).toEqual({ id: 'usuario-1', nome: 'Admin', email: 'admin@exemplo.com' });
+      expect(resultado.lojas).toEqual([{ lojaId: 'loja-1', nome: 'Loja 1', perfil: PerfilAcesso.ADMIN }]);
     });
   });
 });

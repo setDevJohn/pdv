@@ -57,11 +57,7 @@ export class AuthService {
       throw credenciaisInvalidas();
     }
 
-    const lojas: LojaAcesso[] = usuario.lojas.map((vinculo) => ({
-      lojaId: vinculo.lojaId,
-      nome: vinculo.loja.nome,
-      perfil: vinculo.perfil,
-    }));
+    const lojas = this.mapLojas(usuario.lojas);
 
     // Só uma loja acessível: já entra "logado nela". Mais de uma: front pede
     // pra escolher (POST /auth/trocar-loja) antes de liberar rotas de negócio.
@@ -82,7 +78,10 @@ export class AuthService {
     };
   }
 
-  async refresh(refreshToken: string): Promise<SessaoTokens> {
+  // Devolve o mesmo formato do login (não só os tokens): o bootstrap de sessão
+  // no front (restaurar estado depois de um F5, já que o access token só vive
+  // em memória) precisa de usuario/lojas de volta, não só de um novo token.
+  async refresh(refreshToken: string): Promise<LoginResult> {
     let payload: RefreshTokenPayload;
     try {
       payload = this.jwtService.verify<RefreshTokenPayload>(refreshToken, {
@@ -92,26 +91,33 @@ export class AuthService {
       throw new UnauthorizedException('Sessão expirada, faça login novamente');
     }
 
-    const usuario = await this.prisma.usuario.findUnique({ where: { id: payload.sub } });
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { id: payload.sub },
+      include: { lojas: { include: { loja: true } } },
+    });
     if (!usuario || !usuario.ativo) {
       throw new UnauthorizedException('Sessão expirada, faça login novamente');
     }
 
+    const lojas = this.mapLojas(usuario.lojas);
+
     // Revalida o vínculo com a loja ativa a cada refresh — se o acesso foi
     // revogado nesse meio tempo, a próxima renovação já não carrega mais a loja.
-    let lojaAtivaId: string | undefined;
-    let perfil: PerfilAcesso | undefined;
-    if (payload.lojaAtivaId) {
-      const vinculo = await this.prisma.usuarioLoja.findUnique({
-        where: { usuarioId_lojaId: { usuarioId: usuario.id, lojaId: payload.lojaAtivaId } },
-      });
-      if (vinculo) {
-        lojaAtivaId = vinculo.lojaId;
-        perfil = vinculo.perfil;
-      }
-    }
+    const lojaAtiva = payload.lojaAtivaId ? lojas.find((loja) => loja.lojaId === payload.lojaAtivaId) : undefined;
 
-    return this.emitirTokens({ usuarioId: usuario.id, empresaId: usuario.empresaId, lojaAtivaId, perfil });
+    const tokens = this.emitirTokens({
+      usuarioId: usuario.id,
+      empresaId: usuario.empresaId,
+      lojaAtivaId: lojaAtiva?.lojaId,
+      perfil: lojaAtiva?.perfil,
+    });
+
+    return {
+      ...tokens,
+      usuario: { id: usuario.id, nome: usuario.nome, email: usuario.email },
+      lojas,
+      lojaAtivaId: lojaAtiva?.lojaId,
+    };
   }
 
   async trocarLoja(usuarioId: string, empresaId: string, lojaId: string): Promise<SessaoTokens> {
@@ -164,6 +170,14 @@ export class AuthService {
     });
 
     return { gerenteToken };
+  }
+
+  private mapLojas(vinculos: { lojaId: string; perfil: PerfilAcesso; loja: { nome: string } }[]): LojaAcesso[] {
+    return vinculos.map((vinculo) => ({
+      lojaId: vinculo.lojaId,
+      nome: vinculo.loja.nome,
+      perfil: vinculo.perfil,
+    }));
   }
 
   private emitirTokens(params: {

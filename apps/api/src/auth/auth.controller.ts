@@ -37,9 +37,14 @@ export class AuthController {
     if (!refreshToken) {
       throw new UnauthorizedException('Sessão expirada, faça login novamente');
     }
-    const tokens = await this.authService.refresh(refreshToken);
-    this.setRefreshCookie(res, tokens.refreshToken);
-    return { accessToken: tokens.accessToken };
+    const resultado = await this.authService.refresh(refreshToken);
+    this.setRefreshCookie(res, resultado.refreshToken);
+    return {
+      accessToken: resultado.accessToken,
+      usuario: resultado.usuario,
+      lojas: resultado.lojas,
+      lojaAtivaId: resultado.lojaAtivaId,
+    };
   }
 
   @Public()
