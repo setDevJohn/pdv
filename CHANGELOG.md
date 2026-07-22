@@ -18,6 +18,40 @@ Formato de cada entrada:
 
 <!-- Novas entradas entram abaixo desta linha, mais recente no topo -->
 
+## [Catálogo: produtos, variações e categorias] - 2026-07-22
+### Adicionado
+- Backend `CategoriasModule`: CRUD de categorias por loja (leitura Admin+Vendedor, escrita
+  Admin), com nome único por loja (409 em duplicado).
+- Backend `ProdutosModule`: CRUD de produtos com variações. Criar produto cria produto +
+  variações numa transação; listagem paginada com busca por nome/código de barras/SKU;
+  edição de produto e gestão de variações (adicionar/editar/remover). Soft-delete de produto
+  e de variação (não remove a última ativa). Alerta de ruptura (`estoqueAtual <= estoqueMinimo`)
+  calculado na resposta.
+- Primeiro uso real de `@ContarInsercaoTrial()`: criar produto consome uma inserção do trial.
+- Decorator `@LojaAtiva()` (garante e tipa o `lojaAtivaId` do token) e helper
+  `common/prisma-errors` (traduz P2002/P2025).
+- Frontend: layout admin com sidebar (shadcn) e navegação por perfil; página de produtos
+  (tabela com busca debounced, paginação, badge de ruptura, faixa de preço); formulário de
+  produto (criar/editar) com diálogo de variação; página de categorias (CRUD inline).
+- 15 testes de backend + 11 de frontend novos.
+### Decisões técnicas
+- Isolamento por loja em toda query (`where: { lojaId }`); `@Roles()` já garante o perfil —
+  que só existe junto do `lojaAtivaId` no token — então nenhuma rota de negócio vaza entre lojas.
+- Valores `Decimal` do Prisma convertidos para `number` na borda da API (mapper), já que os
+  valores do domínio cabem com folga em float e o frontend consome `number` direto.
+- Estoque inicial não é definido no cadastro do produto: entra pela feature de Estoque (2b),
+  via movimentação registrada — mantém uma única fonte de verdade e trilha de auditoria.
+- Soft-delete (produto/variação `ativo=false`) em vez de exclusão física, para preservar a
+  integridade do histórico de vendas/relatórios.
+- Select de categoria via elemento nativo estilizado, evitando puxar o componente de Select
+  do Radix para um caso simples.
+### Critério de aceite
+- `npm test` verde (`apps/api`: 62, `apps/web`: 42); `npm run build`/`lint` limpos.
+- Backend validado por `curl`: RBAC (Vendedor 403 ao criar), 409 em nome/código duplicado,
+  400 em preço inválido, criação com múltiplas variações, busca paginada.
+- Fluxo completo validado em Chrome headless: login Admin → sidebar Produtos → Novo produto →
+  variação com preço → cadastrar → produto aparece na busca com badge de ruptura.
+
 ## [Trial de 7 dias com inserções limitadas] - 2026-07-22
 ### Adicionado
 - Coluna `Assinatura.trialInsercoesUsadas` (contador) + migration.

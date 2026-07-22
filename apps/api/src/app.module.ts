@@ -8,6 +8,8 @@ import { HashModule } from './common/hash/hash.module';
 import { AuthModule } from './auth/auth.module';
 import { EmpresasModule } from './empresas/empresas.module';
 import { AssinaturaModule } from './assinatura/assinatura.module';
+import { CategoriasModule } from './categorias/categorias.module';
+import { ProdutosModule } from './produtos/produtos.module';
 
 @Module({
   imports: [
@@ -17,6 +19,8 @@ import { AssinaturaModule } from './assinatura/assinatura.module';
     AuthModule,
     EmpresasModule,
     AssinaturaModule,
+    CategoriasModule,
+    ProdutosModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
