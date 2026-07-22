@@ -10,6 +10,7 @@ import { EmpresasModule } from './empresas/empresas.module';
 import { AssinaturaModule } from './assinatura/assinatura.module';
 import { CategoriasModule } from './categorias/categorias.module';
 import { ProdutosModule } from './produtos/produtos.module';
+import { EstoqueModule } from './estoque/estoque.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { ProdutosModule } from './produtos/produtos.module';
     AssinaturaModule,
     CategoriasModule,
     ProdutosModule,
+    EstoqueModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

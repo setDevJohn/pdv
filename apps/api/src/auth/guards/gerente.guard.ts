@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Reflector } from '@nestjs/core';
 import { REQUER_GERENTE_KEY } from '../decorators/requer-gerente.decorator';
 import { GerenteTokenPayload, RequestUser } from '../interfaces/jwt-payload.interface';
+import { PerfilAcesso } from '../../generated/prisma/enums';
 
 // Roda depois do JwtAuthGuard. Sem @RequerGerente(), não exige nada — a rota
 // que precisa de aprovação de gerente (ex.: cancelar venda finalizada, ajuste
@@ -24,6 +25,14 @@ export class GerenteGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest();
+    const user: RequestUser | undefined = request.user;
+
+    // Admin já é totalmente privilegiado: o código de gerente existe para um
+    // Vendedor executar uma ação restrita com aprovação, não para barrar o Admin.
+    if (user?.perfil === PerfilAcesso.ADMIN) {
+      return true;
+    }
+
     const gerenteToken = request.headers['x-gerente-token'];
     if (!gerenteToken) {
       throw new ForbiddenException('Ação exige aprovação de um gerente');
@@ -38,7 +47,6 @@ export class GerenteGuard implements CanActivate {
       throw new ForbiddenException('Aprovação de gerente inválida ou expirada');
     }
 
-    const user: RequestUser | undefined = request.user;
     if (payload.tipo !== 'gerente' || payload.acao !== acaoExigida || payload.lojaId !== user?.lojaAtivaId) {
       throw new ForbiddenException('Aprovação de gerente não corresponde a esta ação');
     }

@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { LayoutDashboardIcon, PackageIcon, TagsIcon, LogOutIcon } from 'lucide-react'
+import { LayoutDashboardIcon, PackageIcon, TagsIcon, BoxesIcon, LogOutIcon } from 'lucide-react'
 import {
   Sidebar,
   SidebarContent,
@@ -30,6 +30,7 @@ interface ItemNav {
 const ITENS: ItemNav[] = [
   { titulo: 'Início', para: '/', icone: LayoutDashboardIcon },
   { titulo: 'Produtos', para: '/produtos', icone: PackageIcon },
+  { titulo: 'Estoque', para: '/estoque', icone: BoxesIcon },
   { titulo: 'Categorias', para: '/categorias', icone: TagsIcon, perfis: ['ADMIN'] },
 ]
 

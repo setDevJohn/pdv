@@ -22,11 +22,18 @@ describe('GerenteGuard', () => {
     expect(guard.canActivate(criarContexto({}))).toBe(true);
   });
 
-  it('rejeita quando o header X-Gerente-Token está ausente', () => {
+  it('rejeita quando o header X-Gerente-Token está ausente (Vendedor)', () => {
     const reflector = { getAllAndOverride: () => 'CANCELAR_VENDA' } as unknown as Reflector;
     const guard = new GerenteGuard(jwtService, reflector);
 
-    expect(() => guard.canActivate(criarContexto({}))).toThrow(ForbiddenException);
+    expect(() => guard.canActivate(criarContexto({}, { perfil: 'VENDEDOR' }))).toThrow(ForbiddenException);
+  });
+
+  it('libera Admin sem exigir gerente-token', () => {
+    const reflector = { getAllAndOverride: () => 'AJUSTE_ESTOQUE' } as unknown as Reflector;
+    const guard = new GerenteGuard(jwtService, reflector);
+
+    expect(guard.canActivate(criarContexto({}, { perfil: 'ADMIN', lojaAtivaId: 'loja-1' }))).toBe(true);
   });
 
   it('rejeita um gerente-token para uma ação diferente da exigida', () => {
@@ -38,7 +45,7 @@ describe('GerenteGuard', () => {
     );
 
     expect(() =>
-      guard.canActivate(criarContexto({ 'x-gerente-token': token }, { lojaAtivaId: 'loja-1' })),
+      guard.canActivate(criarContexto({ 'x-gerente-token': token }, { perfil: 'VENDEDOR', lojaAtivaId: 'loja-1' })),
     ).toThrow(ForbiddenException);
   });
 
@@ -51,7 +58,7 @@ describe('GerenteGuard', () => {
     );
 
     expect(() =>
-      guard.canActivate(criarContexto({ 'x-gerente-token': token }, { lojaAtivaId: 'loja-1' })),
+      guard.canActivate(criarContexto({ 'x-gerente-token': token }, { perfil: 'VENDEDOR', lojaAtivaId: 'loja-1' })),
     ).toThrow(ForbiddenException);
   });
 
@@ -64,7 +71,7 @@ describe('GerenteGuard', () => {
     );
 
     expect(
-      guard.canActivate(criarContexto({ 'x-gerente-token': token }, { lojaAtivaId: 'loja-1' })),
+      guard.canActivate(criarContexto({ 'x-gerente-token': token }, { perfil: 'VENDEDOR', lojaAtivaId: 'loja-1' })),
     ).toBe(true);
   });
 });

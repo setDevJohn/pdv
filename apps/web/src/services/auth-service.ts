@@ -29,3 +29,10 @@ export async function resolverEmpresa(slug: string): Promise<EmpresaResolvida> {
   const { data } = await apiClient.get<EmpresaResolvida>('/empresas/resolver', { params: { slug } })
   return data
 }
+
+// Valida o código de gerente para uma ação restrita (ex.: "AJUSTE_ESTOQUE") e
+// devolve um token de curta duração que autoriza só aquela ação.
+export async function validarCodigoGerente(codigo: string, acao: string): Promise<{ gerenteToken: string }> {
+  const { data } = await apiClient.post<{ gerenteToken: string }>('/auth/validar-codigo-gerente', { codigo, acao })
+  return data
+}

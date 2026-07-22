@@ -18,6 +18,40 @@ Formato de cada entrada:
 
 <!-- Novas entradas entram abaixo desta linha, mais recente no topo -->
 
+## [Estoque: entrada, saída, ajuste e histórico] - 2026-07-22
+### Adicionado
+- Backend `EstoqueModule`: `POST /estoque/entrada`, `/saida`, `/ajuste`, `GET /movimentacoes`
+  (histórico paginado) e `GET /ruptura`. Cada movimentação atualiza o estoque da variação e
+  grava a `MovimentacaoEstoque` (com `estoqueResultante`) numa transação. Saída valida
+  estoque suficiente; ajuste define o valor absoluto contado e registra a diferença.
+- Ajuste manual exige código de gerente para Vendedor (`@RequerGerente('AJUSTE_ESTOQUE')`);
+  Admin passa direto.
+- Alerta de ruptura (`estoqueAtual <= estoqueMinimo`) por variação ativa.
+- Frontend: seção **Estoque** na sidebar — alertas de ruptura no topo, busca de produto e
+  diálogo de movimentação (entrada/saída/ajuste). No ajuste por Vendedor, o diálogo coleta o
+  código de gerente e o valida antes. Diálogo de histórico por variação.
+- 6 testes de backend + 3 de frontend novos (incluindo o fluxo de código de gerente).
+### Decisões técnicas
+- **Mudança no `GerenteGuard` (Fase 2a)**: agora libera automaticamente para ADMIN em vez de
+  exigir o gerente-token de qualquer perfil. O Admin já é totalmente privilegiado; o código de
+  gerente existe para autorizar um Vendedor. Regra consistente com toda a matriz (vale também
+  para o cancelamento de venda, feature 6).
+- Movimentação atômica via `$transaction` interativa (lê atual → calcula → atualiza → grava),
+  com `estoqueResultante` exato. Trade-off assumido: sob read-committed, movimentações
+  concorrentes na mesma variação poderiam causar lost-update — desprezível no volume do MVP;
+  migrar para decremento condicional/optimistic lock se necessário.
+- Estoque inicial de produto novo continua entrando por aqui (movimentação registrada), não
+  pelo cadastro — uma única fonte de verdade e trilha de auditoria completa.
+- Hooks de mutação envolvem o serviço (`(input) => fn(input)`) porque o react-query v5 passa
+  um 2º argumento de contexto ao `mutationFn` — pego por teste antes de vazar pra assinatura.
+### Critério de aceite
+- `npm test` verde (`apps/api`: 69, `apps/web`: 45); `build`/`lint` limpos.
+- Backend validado por `curl`: entrada, saída insuficiente (400), ajuste de Vendedor sem
+  código (403) e com código (200), ajuste de Admin sem código (200), ruptura e histórico
+  encadeado com `estoqueResultante`.
+- Fluxo completo em Chrome headless como Vendedor: Estoque → ruptura → entrada → ajuste
+  exigindo código de gerente → estoque atualizado.
+
 ## [Catálogo: produtos, variações e categorias] - 2026-07-22
 ### Adicionado
 - Backend `CategoriasModule`: CRUD de categorias por loja (leitura Admin+Vendedor, escrita
