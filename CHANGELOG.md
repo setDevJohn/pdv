@@ -18,6 +18,37 @@ Formato de cada entrada:
 
 <!-- Novas entradas entram abaixo desta linha, mais recente no topo -->
 
+## [Design system] - 2026-07-22
+### Adicionado
+- Tokens de tema em `apps/web/src/index.css`: azul Fluent (`#0F6CBD`/`#479EF5`) como cor
+  primária sobre a base neutra shadcn "Nova", mais `--success`/`--warning` (semânticas de
+  sucesso/alerta; erro já existia via `--destructive`), light e dark.
+- Primitivos shadcn instalados: `input`, `label`, `card`, `dialog`, `table`, `badge`,
+  `skeleton`, `separator`, `sonner` (toasts), `tooltip`, `sidebar`.
+- Padrões de estado reutilizáveis em `apps/web/src/components/estado/`: `EstadoCarregando`,
+  `EstadoVazio`, `EstadoErro`; sucesso via `toast.success()` (sonner), já conectado no root
+  junto com `TooltipProvider`.
+- `apps/web/src/lib/format.ts`: `formatarBRL` e `formatarQuantidade` — helpers centrais para
+  valores em R$ (com `tabular-nums`) e quantidade (unidade vs. peso/volume).
+- `packages/shared-types` ganhou seu primeiro conteúdo real (`PerfilAcesso`, `TipoVenda`),
+  consumido por `apps/web` como dependência de workspace.
+- Vitest + Testing Library configurados em `apps/web`; 6 testes cobrindo `format.ts`.
+- Vitrine dos componentes em `apps/web/src/App.tsx` (substituída pela primeira tela real
+  na Fase 3) e documento de referência em `docs/08-design-system.md`.
+### Decisões técnicas
+- Cores semânticas aplicadas via composição de classe (`bg-success/10 text-success`) em vez
+  de alterar os componentes gerados pelo shadcn, para não perder compatibilidade com
+  `npx shadcn update` no futuro.
+- Componentes de produto específicos (teclado numérico, card de venda, gráficos) ficam para
+  a feature que os usa (Fase 3) — evita construir UI especulativa sem tela real por trás.
+- `--ring` (foco visível) usa a mesma cor primária em vez de cinza genérico, por consistência
+  de marca; contraste dos pares cor/texto checado para AA (mín. 4.5:1 texto normal).
+### Critério de aceite
+- `npm run build`, `npm test` e `npm run lint` verdes em `apps/web`; build também validado
+  via `docker compose build web` e `docker compose up` (stack completo).
+- Vitrine em `App.tsx` demonstra todas as variantes de botão, card de produto com preço
+  formatado, badges semânticas e os 4 padrões de estado.
+
 ## [Autenticação e permissões] - 2026-07-22
 ### Adicionado
 - Login por `slug` da empresa + e-mail + senha (`POST /auth/login`), com refresh token
