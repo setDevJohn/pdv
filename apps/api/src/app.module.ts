@@ -11,6 +11,7 @@ import { AssinaturaModule } from './assinatura/assinatura.module';
 import { CategoriasModule } from './categorias/categorias.module';
 import { ProdutosModule } from './produtos/produtos.module';
 import { EstoqueModule } from './estoque/estoque.module';
+import { CaixaModule } from './caixa/caixa.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { EstoqueModule } from './estoque/estoque.module';
     CategoriasModule,
     ProdutosModule,
     EstoqueModule,
+    CaixaModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

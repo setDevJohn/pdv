@@ -18,6 +18,34 @@ Formato de cada entrada:
 
 <!-- Novas entradas entram abaixo desta linha, mais recente no topo -->
 
+## [Caixa: abertura, sangria e fechamento] - 2026-07-22
+### Adicionado
+- Backend `CaixaModule`: `POST /caixa/abrir` (valor inicial declarado; bloqueia se já há
+  caixa aberto na loja), `GET /caixa/atual` (caixa aberto + resumo, ou vazio), `POST
+  /caixa/sangria`, `POST /caixa/fechar` e `GET /caixa/historico`. Abertura/sangria/fechamento
+  para Admin e Vendedor.
+- Saldo em dinheiro calculado (`valorInicial + vendas em dinheiro − sangrias`); sangria não
+  pode exceder o saldo. Fechamento devolve valor esperado × contado e a diferença (sobra/falta).
+- Abertura, sangria e fechamento registrados em `LogAuditoria`.
+- Frontend: seção **Caixa** na sidebar — abre caixa quando não há um aberto; com caixa aberto,
+  mostra cards (inicial/sangrias/saldo), lista de sangrias e diálogos de sangria e fechamento
+  (este exibindo a diferença apurada antes de encerrar).
+- 5 testes de backend + 3 de frontend novos.
+### Decisões técnicas
+- Um caixa aberto por loja por vez (índice `(lojaId, status)`); a venda (feature 5) anexará
+  ao caixa aberto. Evolui para caixa-por-operador se necessário.
+- Saldo já consulta `PagamentoVenda` (forma DINHEIRO, venda FINALIZADA): hoje soma 0, mas
+  passa a incluir vendas automaticamente quando as features 5/6 chegarem, sem mudar o cálculo.
+- **Correção de UX pega no teste de browser**: o fechamento não invalida a query no sucesso —
+  isso desmontaria o componente do caixa antes de exibir a diferença. A invalidação acontece
+  ao clicar em "Concluir", mantendo a tela de resultado visível.
+### Critério de aceite
+- `npm test` verde (`apps/api`: 77, `apps/web`: 48); `build`/`lint` limpos.
+- Backend validado por `curl`: abrir, 409 no segundo abrir, sangria com/sem saldo (400),
+  fechar com diferença, histórico e caixa atual null após fechar.
+- Fluxo completo em Chrome headless: abrir (R$100) → sangria (saldo R$70) → fechar contando
+  a menos → tela de diferença "Falta -R$10,00" → concluir → sem caixa aberto.
+
 ## [Estoque: entrada, saída, ajuste e histórico] - 2026-07-22
 ### Adicionado
 - Backend `EstoqueModule`: `POST /estoque/entrada`, `/saida`, `/ajuste`, `GET /movimentacoes`

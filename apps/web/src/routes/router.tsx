@@ -10,6 +10,7 @@ import { ProdutoNovoPage } from '@/pages/produtos/produto-novo-page'
 import { ProdutoEditarPage } from '@/pages/produtos/produto-editar-page'
 import { CategoriasPage } from '@/pages/categorias/categorias-page'
 import { EstoquePage } from '@/pages/estoque/estoque-page'
+import { CaixaPage } from '@/pages/caixa/caixa-page'
 
 export const router = createBrowserRouter([
   {
@@ -29,8 +30,9 @@ export const router = createBrowserRouter([
         children: [
           { path: '/', element: <HomePage /> },
           { path: '/produtos', element: <ProdutosPage /> },
-          // Estoque: leitura e movimentação para Admin e Vendedor.
+          // Estoque e Caixa: Admin e Vendedor.
           { path: '/estoque', element: <EstoquePage /> },
+          { path: '/caixa', element: <CaixaPage /> },
           // Cadastro/edição de produto são Admin-only (o backend também barra).
           {
             element: <RotaProtegida perfisPermitidos={['ADMIN']} />,
