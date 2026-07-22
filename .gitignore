@@ -8,7 +8,7 @@ npm-debug.log*
 *.tsbuildinfo
 
 # Prisma
-apps/api/generated/
+apps/api/src/generated/
 
 # Vite
 apps/web/.vite/

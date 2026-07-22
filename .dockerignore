@@ -1,0 +1,11 @@
+**/node_modules
+**/dist
+**/build
+**/generated
+**/.env
+**/*.local
+**/*.tsbuildinfo
+**/coverage
+.git
+.gitignore
+docs/

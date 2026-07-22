@@ -1,13 +1,387 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// Schema de dados do PDV.
+//
+// Isolamento multiempresa: schema único com coluna de tenant. A hierarquia é
+// Empresa (assina o plano) -> Loja (estabelecimento; é o tenant operacional) ->
+// Usuario (com acesso a uma ou mais lojas via UsuarioLoja). Todo dado operacional
+// (produtos, estoque, caixa, vendas, auditoria) carrega `lojaId` e as consultas
+// filtram sempre por ele; os índices compostos começam por `lojaId`.
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
+// Output dentro de src/ para que `nest build` compile o client gerado junto
+// com o resto do app (ele é fonte TypeScript, não um pacote pré-compilado).
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum PerfilAcesso {
+  ADMIN
+  VENDEDOR
+}
+
+// Preparado para venda por peso/volume no futuro; MVP usa apenas UNIDADE.
+enum TipoVenda {
+  UNIDADE
+  PESO
+  VOLUME
+}
+
+enum TipoMovimentacaoEstoque {
+  ENTRADA
+  SAIDA
+  AJUSTE
+  VENDA
+  CANCELAMENTO_VENDA
+}
+
+enum StatusCaixa {
+  ABERTO
+  FECHADO
+}
+
+enum StatusVenda {
+  ABERTA
+  FINALIZADA
+  CANCELADA
+}
+
+enum FormaPagamento {
+  DINHEIRO
+  CARTAO
+  PIX
+}
+
+enum PlanoTipo {
+  MENSAL
+  TRIMESTRAL
+  ANUAL
+}
+
+enum StatusAssinatura {
+  TRIAL
+  ATIVA
+  INADIMPLENTE
+  CANCELADA
+}
+
+// ---------------------------------------------------------------------------
+// Empresa / assinatura / loja (tenant)
+// ---------------------------------------------------------------------------
+
+model Empresa {
+  id        String   @id @default(uuid())
+  nome      String
+  documento String?  @unique // CNPJ/CPF do titular da conta
+  criadoEm  DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  assinatura Assinatura?
+  lojas      Loja[]
+  usuarios   Usuario[]
+}
+
+model Assinatura {
+  id        String           @id @default(uuid())
+  empresaId String           @unique
+  plano     PlanoTipo
+  status    StatusAssinatura @default(TRIAL)
+  // Trial de 7 dias com inserções limitadas: quando começou e o teto de inserções.
+  trialIniciadoEm    DateTime?
+  trialLimiteInsercoes Int?
+  // Cobrança soma o valor por loja no mesmo plano, com desconto por loja adicional.
+  descontoMultilojaPct Decimal @default(0) @db.Decimal(5, 2)
+  vigenteAte DateTime?
+  criadoEm   DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  empresa Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+}
+
+model Loja {
+  id        String   @id @default(uuid())
+  empresaId String
+  nome      String
+  documento String? // CNPJ da loja, quando difere do titular
+  // Código de gerente para liberar ações restritas na tela de venda. Guardado
+  // como hash — nunca em texto puro (ver docs/06 §6.2).
+  codigoGerenteHash String?
+  criadoEm  DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  empresa       Empresa               @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  usuariosLoja  UsuarioLoja[]
+  categorias    Categoria[]
+  produtos      Produto[]
+  variacoes     ProdutoVariacao[]
+  movimentacoes MovimentacaoEstoque[]
+  caixas        Caixa[]
+  vendas        Venda[]
+  auditoria     LogAuditoria[]
+
+  @@index([empresaId])
+}
+
+// ---------------------------------------------------------------------------
+// Usuários e vínculo com lojas (perfil por loja)
+// ---------------------------------------------------------------------------
+
+model Usuario {
+  id        String   @id @default(uuid())
+  empresaId String
+  nome      String
+  email     String
+  senhaHash String
+  ativo     Boolean  @default(true)
+  criadoEm  DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  empresa       Empresa        @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  lojas         UsuarioLoja[]
+  caixas        Caixa[]
+  sangrias      Sangria[]
+  vendas        Venda[]        @relation("VendaOperador")
+  vendasCanceladas Venda[]     @relation("VendaCancelamentoAprovador")
+  movimentacoes MovimentacaoEstoque[]
+  auditoria     LogAuditoria[]
+
+  // Login é único por empresa (o mesmo e-mail pode existir em empresas distintas).
+  @@unique([empresaId, email])
+}
+
+model UsuarioLoja {
+  id        String       @id @default(uuid())
+  usuarioId String
+  lojaId    String
+  perfil    PerfilAcesso
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  loja    Loja    @relation(fields: [lojaId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, lojaId])
+  @@index([lojaId])
+}
+
+// ---------------------------------------------------------------------------
+// Catálogo e estoque
+// ---------------------------------------------------------------------------
+
+model Categoria {
+  id       String   @id @default(uuid())
+  lojaId   String
+  nome     String
+  criadoEm DateTime @default(now())
+
+  loja     Loja      @relation(fields: [lojaId], references: [id], onDelete: Cascade)
+  produtos Produto[]
+
+  @@unique([lojaId, nome])
+  @@index([lojaId])
+}
+
+model Produto {
+  id          String    @id @default(uuid())
+  lojaId      String
+  categoriaId String?
+  nome        String
+  descricao   String?
+  tipoVenda   TipoVenda @default(UNIDADE)
+  // Unidade de medida quando não for por unidade (kg, L). Reservado para o futuro.
+  unidadeMedida String?
+  ativo       Boolean   @default(true)
+  criadoEm    DateTime  @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  loja      Loja              @relation(fields: [lojaId], references: [id], onDelete: Cascade)
+  categoria Categoria?        @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+  variacoes ProdutoVariacao[]
+
+  @@index([lojaId])
+  @@index([lojaId, ativo])
+}
+
+// Toda venda referencia uma variação (produtos sem variação real têm uma variação
+// padrão). Preço, código de barras e estoque vivem aqui.
+model ProdutoVariacao {
+  id           String  @id @default(uuid())
+  lojaId       String
+  produtoId    String
+  nome         String  @default("Padrão") // ex.: "500ml", "Chocolate", "G"
+  sku          String?
+  codigoBarras String?
+  precoVenda   Decimal @db.Decimal(12, 2)
+  precoCusto   Decimal? @db.Decimal(12, 2)
+  // Quantidade em Decimal para suportar peso/volume no futuro sem migração.
+  estoqueAtual Decimal @default(0) @db.Decimal(12, 3)
+  estoqueMinimo Decimal @default(0) @db.Decimal(12, 3)
+  ativo        Boolean @default(true)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  loja          Loja                  @relation(fields: [lojaId], references: [id], onDelete: Cascade)
+  produto       Produto               @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+  itensVenda    ItemVenda[]
+  movimentacoes MovimentacaoEstoque[]
+
+  // Leitura do código de barras no PDV filtra por (lojaId, codigoBarras).
+  @@unique([lojaId, codigoBarras])
+  @@index([produtoId])
+  @@index([lojaId, ativo])
+}
+
+model MovimentacaoEstoque {
+  id                String                  @id @default(uuid())
+  lojaId            String
+  produtoVariacaoId String
+  usuarioId         String?
+  tipo              TipoMovimentacaoEstoque
+  // Positiva em entradas, negativa em saídas; Decimal para peso/volume futuro.
+  quantidade        Decimal                 @db.Decimal(12, 3)
+  estoqueResultante Decimal                 @db.Decimal(12, 3)
+  observacao        String?
+  // Rastreabilidade quando a movimentação vem de uma venda/cancelamento.
+  vendaId           String?
+  criadoEm          DateTime                @default(now())
+
+  loja            Loja            @relation(fields: [lojaId], references: [id], onDelete: Cascade)
+  produtoVariacao ProdutoVariacao @relation(fields: [produtoVariacaoId], references: [id], onDelete: Cascade)
+  usuario         Usuario?        @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+  venda           Venda?          @relation(fields: [vendaId], references: [id], onDelete: SetNull)
+
+  @@index([lojaId, produtoVariacaoId, criadoEm])
+  @@index([vendaId])
+}
+
+// ---------------------------------------------------------------------------
+// Caixa e sangria
+// ---------------------------------------------------------------------------
+
+model Caixa {
+  id             String      @id @default(uuid())
+  lojaId         String
+  usuarioAberturaId String
+  status         StatusCaixa @default(ABERTO)
+  valorInicial   Decimal     @db.Decimal(12, 2)
+  valorFechamento Decimal?   @db.Decimal(12, 2)
+  abertoEm       DateTime    @default(now())
+  fechadoEm      DateTime?
+
+  loja            Loja      @relation(fields: [lojaId], references: [id], onDelete: Cascade)
+  usuarioAbertura Usuario   @relation(fields: [usuarioAberturaId], references: [id])
+  sangrias        Sangria[]
+  vendas          Venda[]
+
+  // Achar o caixa aberto da loja sem varrer histórico.
+  @@index([lojaId, status])
+}
+
+model Sangria {
+  id        String   @id @default(uuid())
+  caixaId   String
+  usuarioId String
+  valor     Decimal  @db.Decimal(12, 2)
+  motivo    String?
+  criadoEm  DateTime @default(now())
+
+  caixa   Caixa   @relation(fields: [caixaId], references: [id], onDelete: Cascade)
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+
+  @@index([caixaId])
+}
+
+// ---------------------------------------------------------------------------
+// Venda, itens e pagamentos
+// ---------------------------------------------------------------------------
+
+model Venda {
+  id         String      @id @default(uuid())
+  lojaId     String
+  caixaId    String?
+  operadorId String
+  status     StatusVenda @default(ABERTA)
+  subtotal   Decimal     @default(0) @db.Decimal(12, 2)
+  desconto   Decimal     @default(0) @db.Decimal(12, 2)
+  total      Decimal     @default(0) @db.Decimal(12, 2)
+  troco      Decimal     @default(0) @db.Decimal(12, 2)
+  criadoEm   DateTime    @default(now())
+  finalizadoEm DateTime?
+
+  // Cancelamento de venda finalizada exige aprovação por código de gerente.
+  canceladoEm         DateTime?
+  canceladoMotivo     String?
+  canceladoAprovadorId String?
+
+  loja               Loja                  @relation(fields: [lojaId], references: [id], onDelete: Cascade)
+  caixa              Caixa?                @relation(fields: [caixaId], references: [id], onDelete: SetNull)
+  operador           Usuario               @relation("VendaOperador", fields: [operadorId], references: [id])
+  canceladoAprovador Usuario?              @relation("VendaCancelamentoAprovador", fields: [canceladoAprovadorId], references: [id])
+  itens              ItemVenda[]
+  pagamentos         PagamentoVenda[]
+  movimentacoes      MovimentacaoEstoque[]
+
+  // Relatórios por dia/semana/mês e listagem por status.
+  @@index([lojaId, criadoEm])
+  @@index([lojaId, status])
+  @@index([caixaId])
+}
+
+model ItemVenda {
+  id                String  @id @default(uuid())
+  vendaId           String
+  produtoVariacaoId String
+  // Nome/preço "congelados" no momento da venda (histórico não muda se o produto mudar).
+  descricao         String
+  quantidade        Decimal @db.Decimal(12, 3)
+  precoUnitario     Decimal @db.Decimal(12, 2)
+  total             Decimal @db.Decimal(12, 2)
+
+  venda           Venda           @relation(fields: [vendaId], references: [id], onDelete: Cascade)
+  produtoVariacao ProdutoVariacao @relation(fields: [produtoVariacaoId], references: [id])
+
+  @@index([vendaId])
+  @@index([produtoVariacaoId])
+}
+
+model PagamentoVenda {
+  id      String         @id @default(uuid())
+  vendaId String
+  forma   FormaPagamento
+  valor   Decimal        @db.Decimal(12, 2)
+  // Preparação para integração futura com adquirente (Stone/Cielo/GetNet/PagSeguro):
+  // identificador da transação retornado pelo gateway, quando houver.
+  transacaoGatewayId String?
+  criadoEm DateTime @default(now())
+
+  venda Venda @relation(fields: [vendaId], references: [id], onDelete: Cascade)
+
+  @@index([vendaId])
+}
+
+// ---------------------------------------------------------------------------
+// Auditoria de ações sensíveis
+// ---------------------------------------------------------------------------
+
+model LogAuditoria {
+  id         String   @id @default(uuid())
+  lojaId     String
+  usuarioId  String?
+  acao       String // ex.: "VENDA_CANCELADA", "SANGRIA", "ESTOQUE_AJUSTE"
+  entidade   String // ex.: "Venda", "Caixa"
+  entidadeId String?
+  valorAnterior Json?
+  valorNovo  Json?
+  criadoEm   DateTime @default(now())
+
+  loja    Loja     @relation(fields: [lojaId], references: [id], onDelete: Cascade)
+  usuario Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+
+  @@index([lojaId, criadoEm])
+  @@index([lojaId, entidade, entidadeId])
 }
