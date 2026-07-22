@@ -18,6 +18,46 @@ Formato de cada entrada:
 
 <!-- Novas entradas entram abaixo desta linha, mais recente no topo -->
 
+## [Venda: carrinho (sem pagamento)] - 2026-07-22
+### Adicionado
+- Backend `VendasModule`: `POST /vendas/abrir` (reaproveita a venda `ABERTA` existente do
+  operador na loja em vez de criar outra), `GET /vendas/aberta`, `GET /vendas/buscar?termo=`
+  (código de barras exato entra direto; senão busca parcial por nome/SKU), `POST
+  /vendas/:id/itens`, `PATCH /vendas/:id/itens/:itemId`, `DELETE /vendas/:id/itens/:itemId` e
+  `POST /vendas/:id/descartar`. Admin e Vendedor.
+- Preço e descrição do item são sempre lidos do banco e congelados no `ItemVenda` — o cliente
+  manda só `produtoVariacaoId` e `quantidade` (o `ValidationPipe` com `forbidNonWhitelisted`
+  rejeita qualquer tentativa de mandar preço). Bipar o mesmo produto duas vezes soma na linha
+  existente em vez de duplicar. Subtotal/total sempre recalculados a partir dos itens (nunca
+  acumulados), pra não divergir depois de uma sequência de adições/remoções.
+- Frontend: rota `/venda` — abre o carrinho do operador automaticamente ao entrar na tela,
+  input de código de barras/nome/SKU sempre focado, lista de opções quando a busca é ambígua,
+  itens com controles de quantidade (+/-) e remoção, total ao vivo e diálogo de descarte.
+  Mutação de item usa atualização otimista no React Query (o carrinho responde na hora do bipe;
+  o request confirma atrás, com rollback em caso de erro).
+- 13 testes de backend + 4 de frontend novos.
+### Decisões técnicas
+- Venda nasce com `status ABERTA` persistida no banco (não é um carrinho só no cliente) — assim
+  o operador recupera o carrinho após F5 ou troca de estação sem perder nada. Abandonar o
+  carrinho (`descartar`) apaga a `Venda`: nada saiu do estoque nem entrou no caixa ainda, então
+  não é um evento de negócio que precise virar histórico.
+- **Faseamento combinado com o usuário**: esta feature cobre só o carrinho — sem baixa de
+  estoque, sem vínculo com caixa, sem finalização/pagamento. A feature 6 (Pagamento) finaliza a
+  venda (baixa de estoque atômica, anexa ao caixa aberto, cancelamento com código de gerente).
+  Evita reescrever o mesmo código duas vezes: a lógica de finalização nasce direto na feature 6.
+- Estoque mostrado na busca (`estoqueAtual`) é só informativo nesta feature — a validação de
+  estoque suficiente entra na finalização (feature 6), quando a baixa de fato acontece.
+### Critério de aceite
+- `npm test` verde (`apps/api`: 90, `apps/web`: 52); `build`/`lint` limpos (código novo sem
+  apontamentos; o padrão pré-existente de falso-positivo do eslint em arquivos `.spec.ts` com
+  mocks do Jest já existe em specs do main, não é regressão desta feature).
+- Backend validado por `curl` de ponta a ponta contra banco real (Postgres + migrations + seed):
+  abrir venda, reabrir reaproveita a mesma, buscar por código de barras exato e por nome
+  parcial, bipar duas vezes soma quantidade na mesma linha, ajustar quantidade, remover item,
+  descartar (caixa some, `GET /vendas/aberta` volta vazio). Confirmado isolamento por operador
+  (Vendedor não acessa a venda aberta do Admin, 404) e rejeição de payload com preço manipulado
+  pelo cliente (400).
+
 ## [Caixa: abertura, sangria e fechamento] - 2026-07-22
 ### Adicionado
 - Backend `CaixaModule`: `POST /caixa/abrir` (valor inicial declarado; bloqueia se já há

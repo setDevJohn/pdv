@@ -12,6 +12,7 @@ import { CategoriasModule } from './categorias/categorias.module';
 import { ProdutosModule } from './produtos/produtos.module';
 import { EstoqueModule } from './estoque/estoque.module';
 import { CaixaModule } from './caixa/caixa.module';
+import { VendasModule } from './vendas/vendas.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { CaixaModule } from './caixa/caixa.module';
     ProdutosModule,
     EstoqueModule,
     CaixaModule,
+    VendasModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

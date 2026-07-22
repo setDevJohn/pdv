@@ -11,6 +11,7 @@ import { ProdutoEditarPage } from '@/pages/produtos/produto-editar-page'
 import { CategoriasPage } from '@/pages/categorias/categorias-page'
 import { EstoquePage } from '@/pages/estoque/estoque-page'
 import { CaixaPage } from '@/pages/caixa/caixa-page'
+import { VendaPage } from '@/pages/venda/venda-page'
 
 export const router = createBrowserRouter([
   {
@@ -29,6 +30,8 @@ export const router = createBrowserRouter([
         element: <AdminLayout />,
         children: [
           { path: '/', element: <HomePage /> },
+          // Venda: Admin e Vendedor — é a tela de frente de caixa.
+          { path: '/venda', element: <VendaPage /> },
           { path: '/produtos', element: <ProdutosPage /> },
           // Estoque e Caixa: Admin e Vendedor.
           { path: '/estoque', element: <EstoquePage /> },
