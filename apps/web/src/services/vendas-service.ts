@@ -116,3 +116,10 @@ export async function listarVendas(params: { status?: string; pagina?: number } 
   const { data } = await apiClient.get<ListagemVendas>('/vendas', { params })
   return data
 }
+
+// Histórico lista só o resumo (sem itens/pagamentos) — reimpressão de recibo
+// busca o detalhe completo sob demanda.
+export async function buscarVendaPorId(id: string): Promise<VendaResumo> {
+  const { data } = await apiClient.get<VendaResumo>(`/vendas/${id}`)
+  return data
+}

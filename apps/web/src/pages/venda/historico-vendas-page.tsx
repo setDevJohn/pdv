@@ -1,14 +1,16 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeftIcon } from 'lucide-react'
+import { toast } from 'sonner'
+import { ArrowLeftIcon, PrinterIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { EstadoErro, EstadoVazio } from '@/components/estado'
 import { useHistoricoVendas } from '@/hooks/use-vendas'
+import { useImprimirRecibo, useImpressoraSuportada } from '@/hooks/use-impressora'
 import { formatarBRL } from '@/lib/format'
-import type { VendaResumo } from '@/services/vendas-service'
+import { buscarVendaPorId, type VendaResumo } from '@/services/vendas-service'
 import { CancelarVendaDialog } from './cancelar-venda-dialog'
 
 const ROTULO_STATUS: Record<VendaResumo['status'], string> = {
@@ -20,6 +22,23 @@ const ROTULO_STATUS: Record<VendaResumo['status'], string> = {
 export function HistoricoVendasPage() {
   const { data, isPending, isError, refetch } = useHistoricoVendas({ status: 'FINALIZADA' })
   const [cancelarVenda, setCancelarVenda] = useState<VendaResumo | null>(null)
+  const [imprimindoId, setImprimindoId] = useState<string | null>(null)
+  const imprimir = useImprimirRecibo()
+  const impressoraSuportada = useImpressoraSuportada()
+
+  async function aoImprimir(vendaId: string) {
+    setImprimindoId(vendaId)
+    try {
+      const vendaCompleta = await buscarVendaPorId(vendaId)
+      await imprimir.mutateAsync(vendaCompleta)
+    } catch (erro) {
+      // Cancelar o seletor de dispositivo não é erro.
+      if (erro instanceof DOMException && erro.name === 'NotFoundError') return
+      toast.error('Não foi possível imprimir o recibo.')
+    } finally {
+      setImprimindoId(null)
+    }
+  }
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">
@@ -71,9 +90,22 @@ export function HistoricoVendasPage() {
                 </TableCell>
                 <TableCell>
                   {venda.status === 'FINALIZADA' && (
-                    <Button size="sm" variant="outline" onClick={() => setCancelarVenda(venda)}>
-                      Cancelar
-                    </Button>
+                    <div className="flex justify-end gap-1">
+                      {impressoraSuportada && (
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          aria-label="Imprimir recibo"
+                          disabled={imprimindoId === venda.id}
+                          onClick={() => aoImprimir(venda.id)}
+                        >
+                          <PrinterIcon />
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline" onClick={() => setCancelarVenda(venda)}>
+                        Cancelar
+                      </Button>
+                    </div>
                   )}
                 </TableCell>
               </TableRow>

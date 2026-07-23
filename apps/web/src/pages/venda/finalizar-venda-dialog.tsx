@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { isAxiosError } from 'axios'
 import { toast } from 'sonner'
+import { PrinterIcon } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -13,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useFinalizarVenda, useReiniciarVenda } from '@/hooks/use-vendas'
+import { useImprimirRecibo, useImpressoraSuportada } from '@/hooks/use-impressora'
 import { formatarBRL } from '@/lib/format'
 import type { FormaPagamento, VendaResumo } from '@/services/vendas-service'
 
@@ -37,6 +39,8 @@ function paraNumero(texto: string): number {
 export function FinalizarVendaDialog({ aberto, aoFechar, venda }: Props) {
   const finalizar = useFinalizarVenda(venda.id)
   const reiniciarVenda = useReiniciarVenda()
+  const imprimir = useImprimirRecibo()
+  const impressoraSuportada = useImpressoraSuportada()
 
   const [dinheiro, setDinheiro] = useState('')
   const [cartao, setCartao] = useState('')
@@ -105,6 +109,17 @@ export function FinalizarVendaDialog({ aberto, aoFechar, venda }: Props) {
     aoFechar()
   }
 
+  function aoImprimir() {
+    imprimir.mutate(resultado as VendaResumo, {
+      onError: (erro) => {
+        // Cancelar o seletor de dispositivo não é erro — o operador só
+        // decidiu não imprimir agora.
+        if (erro instanceof DOMException && erro.name === 'NotFoundError') return
+        toast.error('Não foi possível imprimir o recibo.')
+      },
+    })
+  }
+
   if (resultado) {
     return (
       <Dialog open={aberto} onOpenChange={(v) => !v && aoConcluir()}>
@@ -128,6 +143,12 @@ export function FinalizarVendaDialog({ aberto, aoFechar, venda }: Props) {
             )}
           </div>
           <DialogFooter>
+            {impressoraSuportada && (
+              <Button type="button" variant="outline" onClick={aoImprimir} disabled={imprimir.isPending}>
+                <PrinterIcon />
+                {imprimir.isPending ? 'Imprimindo...' : 'Imprimir recibo'}
+              </Button>
+            )}
             <Button type="button" onClick={aoConcluir} autoFocus>
               Nova venda
             </Button>

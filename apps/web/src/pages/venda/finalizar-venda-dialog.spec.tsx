@@ -4,9 +4,11 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { FinalizarVendaDialog } from './finalizar-venda-dialog'
 import * as vendasService from '@/services/vendas-service'
+import * as impressora from '@/lib/webusb-printer'
 import type { VendaResumo } from '@/services/vendas-service'
 
 vi.mock('@/services/vendas-service')
+vi.mock('@/lib/webusb-printer')
 
 const venda: VendaResumo = {
   id: 'venda-1',
@@ -83,5 +85,33 @@ describe('FinalizarVendaDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Confirmar' }))
 
     expect(vendasService.finalizarVenda).not.toHaveBeenCalled()
+  });
+
+  it('não mostra "Imprimir recibo" quando o navegador não suporta WebUSB', async () => {
+    vi.mocked(impressora.impressoraSuportada).mockReturnValue(false)
+    vi.mocked(vendasService.finalizarVenda).mockResolvedValue({ ...venda, status: 'FINALIZADA' })
+    const user = userEvent.setup()
+    renderDialog()
+
+    await user.type(screen.getByLabelText('Dinheiro (R$)'), '20')
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }))
+
+    await screen.findByText('Venda finalizada')
+    expect(screen.queryByRole('button', { name: /Imprimir recibo/ })).not.toBeInTheDocument()
+  });
+
+  it('imprime o recibo quando o navegador suporta WebUSB', async () => {
+    vi.mocked(impressora.impressoraSuportada).mockReturnValue(true)
+    vi.mocked(impressora.imprimir).mockResolvedValue(undefined)
+    const finalizada = { ...venda, status: 'FINALIZADA' as const }
+    vi.mocked(vendasService.finalizarVenda).mockResolvedValue(finalizada)
+    const user = userEvent.setup()
+    renderDialog()
+
+    await user.type(screen.getByLabelText('Dinheiro (R$)'), '20')
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }))
+    await user.click(await screen.findByRole('button', { name: /Imprimir recibo/ }))
+
+    await waitFor(() => expect(impressora.imprimir).toHaveBeenCalled())
   });
 });

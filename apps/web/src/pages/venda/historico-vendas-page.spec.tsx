@@ -6,11 +6,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { HistoricoVendasPage } from './historico-vendas-page'
 import * as vendasService from '@/services/vendas-service'
 import * as authService from '@/services/auth-service'
+import * as impressora from '@/lib/webusb-printer'
 import { useAuthStore } from '@/stores/auth-store'
 import type { VendaResumo } from '@/services/vendas-service'
 
 vi.mock('@/services/vendas-service')
 vi.mock('@/services/auth-service')
+vi.mock('@/lib/webusb-printer')
 
 const estadoInicial = useAuthStore.getState()
 
@@ -96,5 +98,31 @@ describe('HistoricoVendasPage', () => {
 
     await waitFor(() => expect(authService.validarCodigoGerente).toHaveBeenCalledWith('1234', 'CANCELAR_VENDA'))
     expect(vendasService.cancelarVenda).toHaveBeenCalledWith('venda-1', undefined, 'tok-1')
+  });
+
+  it('não mostra o botão de imprimir sem suporte a WebUSB', async () => {
+    vi.mocked(impressora.impressoraSuportada).mockReturnValue(false)
+    vi.mocked(vendasService.listarVendas).mockResolvedValue({ items: [vendaFinalizada], total: 1, pagina: 1, porPagina: 20 })
+
+    renderPage()
+
+    await screen.findByText('Fulano')
+    expect(screen.queryByRole('button', { name: 'Imprimir recibo' })).not.toBeInTheDocument()
+  });
+
+  it('busca o detalhe completo da venda e imprime', async () => {
+    vi.mocked(impressora.impressoraSuportada).mockReturnValue(true)
+    vi.mocked(impressora.imprimir).mockResolvedValue(undefined)
+    vi.mocked(vendasService.listarVendas).mockResolvedValue({ items: [vendaFinalizada], total: 1, pagina: 1, porPagina: 20 })
+    const vendaComItens = { ...vendaFinalizada, itens: [{ id: 'i1', produtoVariacaoId: 'v1', descricao: 'Refrigerante', quantidade: 2, precoUnitario: 6.5, total: 13 }] }
+    vi.mocked(vendasService.buscarVendaPorId).mockResolvedValue(vendaComItens)
+    const user = userEvent.setup()
+
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Imprimir recibo' }))
+
+    await waitFor(() => expect(vendasService.buscarVendaPorId).toHaveBeenCalledWith('venda-1'))
+    expect(impressora.imprimir).toHaveBeenCalled()
   });
 });

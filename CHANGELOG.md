@@ -18,6 +18,46 @@ Formato de cada entrada:
 
 <!-- Novas entradas entram abaixo desta linha, mais recente no topo -->
 
+## [Recibo térmico via WebUSB] - 2026-07-22
+### Adicionado
+- Impressão de recibo direto no navegador via WebUSB, sem serviço local instalado (ver
+  docs/07-escopo-fechado.md) — 100% frontend, sem endpoint novo (a venda finalizada já traz
+  tudo que o recibo precisa).
+- `apps/web/src/lib/esc-pos.ts`: comandos ESC/POS mínimos (inicializar, alinhar, negrito,
+  cortar) e normalização pra ASCII puro (impressoras térmicas baratas usam codepage
+  CP437/CP860, não UTF-8).
+- `apps/web/src/lib/formatar-recibo.ts`: monta o recibo (loja, itens, total, pagamentos,
+  troco) a partir da `VendaResumo` já existente, em colunas de 32 caracteres (térmica 58mm).
+- `apps/web/src/lib/webusb-printer.ts`: abre o seletor de dispositivo USB do navegador na
+  primeira impressão; nas seguintes reaproveita o dispositivo já autorizado
+  (`navigator.usb.getDevices()`), sem pedir permissão de novo.
+- Botão "Imprimir recibo" na tela de recibo pós-finalização (`FinalizarVendaDialog`) e ação de
+  reimpressão por linha no Histórico de vendas (busca o detalhe completo sob demanda, já que a
+  listagem não traz itens). Botão só aparece com `navigator.usb` disponível (Chrome/Edge).
+- 27 testes de frontend novos (comandos ESC/POS, formatação do recibo, mock de `navigator.usb`
+  cobrindo reaproveitar/pedir dispositivo, sem endpoint de saída, falha de transferência, e os
+  dois pontos de entrada na UI).
+### Decisões técnicas
+- Cancelar o seletor de dispositivo (`NotFoundError`) não é tratado como erro — o operador só
+  decidiu não imprimir agora; qualquer outro erro (sem endpoint, falha de transferência) mostra
+  toast.
+- **Sem hardware real pra validar neste ambiente**: a impressora térmica não pode ser testada
+  fim a fim aqui (precisa de dispositivo USB físico e permissão de navegador real). Validado por
+  testes unitários da geração de bytes ESC/POS (decodificados de volta e conferidos byte a
+  byte) e mock completo de `navigator.usb`; confirmado visualmente em Chrome real (Puppeteer)
+  que `navigator.usb` existe e o botão "Imprimir recibo" aparece corretamente na tela de recibo.
+  Teste com impressora física fica para quando houver hardware disponível.
+### Critério de aceite
+- `npm test` verde (`apps/web`: 94, sem mudança no `apps/api`: 110); `build`/`lint` limpos.
+- Testes unitários: bytes ESC/POS corretos (init, alinhar, negrito, corte), recibo contém loja/
+  itens/total/pagamento/troco (e omite a linha de troco quando não há), acento e espaço
+  non-breaking normalizados pra ASCII puro (evita caractere quebrado na impressora).
+- `webusb-printer`: reaproveita dispositivo já autorizado sem novo prompt, pede dispositivo
+  novo quando nenhum autorizado, seleciona configuração quando ausente, rejeita sem endpoint de
+  saída, fecha o dispositivo mesmo quando a transferência falha.
+- Validado em Chrome real: login completo, venda, finalização — botão "Imprimir recibo"
+  aparece na tela de recibo com `navigator.usb` presente.
+
 ## [Dashboard: vendas, produtos mais vendidos e exportação Excel] - 2026-07-22
 ### Adicionado
 - Backend `DashboardModule` (Admin apenas): `GET /dashboard/resumo` (vendas e faturamento de
