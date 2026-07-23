@@ -3,14 +3,19 @@ import {
   abrirVenda,
   adicionarItemVenda,
   atualizarItemVenda,
+  cancelarVenda,
   descartarVenda,
+  finalizarVenda,
+  listarVendas,
   obterVendaAberta,
   removerItemVenda,
+  type FormaPagamento,
   type ItemVenda,
   type VendaResumo,
 } from '@/services/vendas-service'
 
 const CHAVE = 'venda-aberta'
+const CHAVE_HISTORICO = 'vendas-historico'
 
 function dinheiro(valor: number): number {
   return Number(valor.toFixed(2))
@@ -148,5 +153,35 @@ export function useDescartarVenda() {
   return useMutation({
     mutationFn: (vendaId: string) => descartarVenda(vendaId),
     onSuccess: () => queryClient.setQueryData([CHAVE], null),
+  })
+}
+
+// Sem invalidar no sucesso: o diálogo de finalização mostra o recibo
+// (pagamentos e troco) e só limpa o carrinho quando o operador clica em
+// "Nova venda" — mesmo motivo do useFecharCaixa (ver use-caixa.ts).
+export function useFinalizarVenda(vendaId: string | undefined) {
+  return useMutation({
+    mutationFn: (pagamentos: Array<{ forma: FormaPagamento; valor: number }>) =>
+      finalizarVenda(vendaId as string, pagamentos),
+  })
+}
+
+// Chamado ao concluir o recibo — limpa o carrinho da tela; o efeito da
+// VendaPage abre uma venda nova automaticamente ao ver `null`.
+export function useReiniciarVenda() {
+  const queryClient = useQueryClient()
+  return () => queryClient.setQueryData([CHAVE], null)
+}
+
+export function useHistoricoVendas(params: { status?: string; pagina?: number }) {
+  return useQuery({ queryKey: [CHAVE_HISTORICO, params], queryFn: () => listarVendas(params) })
+}
+
+export function useCancelarVenda() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ vendaId, motivo, gerenteToken }: { vendaId: string; motivo?: string; gerenteToken?: string }) =>
+      cancelarVenda(vendaId, motivo, gerenteToken),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [CHAVE_HISTORICO] }),
   })
 }

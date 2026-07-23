@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
+import { Link } from 'react-router-dom'
 import { MinusIcon, PlusIcon, ScanBarcodeIcon, Trash2Icon } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -11,6 +12,7 @@ import { useAbrirVenda, useAdicionarItem, useAtualizarItem, useRemoverItem, useV
 import { buscarItens, type ItemCatalogo, type ItemVenda } from '@/services/vendas-service'
 import { formatarBRL } from '@/lib/format'
 import { DescartarVendaDialog } from './descartar-venda-dialog'
+import { FinalizarVendaDialog } from './finalizar-venda-dialog'
 
 export function VendaPage() {
   const vendaQuery = useVendaAberta()
@@ -25,6 +27,7 @@ export function VendaPage() {
   const [buscando, setBuscando] = useState(false)
   const [opcoes, setOpcoes] = useState<ItemCatalogo[]>([])
   const [descartarAberto, setDescartarAberto] = useState(false)
+  const [finalizarAberto, setFinalizarAberto] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   // Não há venda em andamento ainda: abre uma (o backend reaproveita se já
@@ -100,11 +103,21 @@ export function VendaPage() {
           <h1 className="font-heading text-xl font-semibold">Venda</h1>
           <p className="text-sm text-muted-foreground">Bipe o código de barras ou busque por nome/SKU.</p>
         </div>
-        {venda.itens.length > 0 && (
-          <Button variant="outline" size="sm" onClick={() => setDescartarAberto(true)}>
-            Descartar venda
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          <Link to="/vendas/historico" className="text-sm text-muted-foreground hover:text-foreground hover:underline">
+            Histórico
+          </Link>
+          {venda.itens.length > 0 && (
+            <>
+              <Button variant="outline" size="sm" onClick={() => setDescartarAberto(true)}>
+                Descartar venda
+              </Button>
+              <Button size="sm" onClick={() => setFinalizarAberto(true)}>
+                Finalizar venda
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       <form className="flex gap-2" onSubmit={aoBipar}>
@@ -192,6 +205,7 @@ export function VendaPage() {
       </Card>
 
       <DescartarVendaDialog aberto={descartarAberto} aoFechar={() => setDescartarAberto(false)} vendaId={venda.id} />
+      <FinalizarVendaDialog aberto={finalizarAberto} aoFechar={() => setFinalizarAberto(false)} venda={venda} />
     </div>
   )
 }

@@ -1,5 +1,7 @@
 import { apiClient } from '@/lib/api-client'
 
+export type FormaPagamento = 'DINHEIRO' | 'CARTAO' | 'PIX'
+
 export interface ItemVenda {
   id: string
   produtoVariacaoId: string
@@ -9,15 +11,28 @@ export interface ItemVenda {
   total: number
 }
 
+export interface PagamentoVenda {
+  id: string
+  forma: FormaPagamento
+  valor: number
+  transacaoGatewayId: string | null
+}
+
 export interface VendaResumo {
   id: string
   status: 'ABERTA' | 'FINALIZADA' | 'CANCELADA'
   subtotal: number
   desconto: number
   total: number
+  troco: number
   criadoEm: string
+  finalizadoEm: string | null
+  canceladoEm: string | null
+  canceladoMotivo: string | null
   quantidadeItens: number
   itens: ItemVenda[]
+  pagamentos: PagamentoVenda[]
+  operador: string | null
 }
 
 export interface ItemCatalogo {
@@ -69,4 +84,35 @@ export async function removerItemVenda(vendaId: string, itemId: string): Promise
 
 export async function descartarVenda(vendaId: string): Promise<void> {
   await apiClient.post(`/vendas/${vendaId}/descartar`)
+}
+
+export async function finalizarVenda(
+  vendaId: string,
+  pagamentos: Array<{ forma: FormaPagamento; valor: number }>,
+): Promise<VendaResumo> {
+  const { data } = await apiClient.post<VendaResumo>(`/vendas/${vendaId}/finalizar`, { pagamentos })
+  return data
+}
+
+// O gerente-token (aprovação do cancelamento pelo Vendedor) vai no header
+// X-Gerente-Token — mesmo padrão do ajuste de estoque.
+function configGerente(gerenteToken?: string) {
+  return gerenteToken ? { headers: { 'X-Gerente-Token': gerenteToken } } : undefined
+}
+
+export async function cancelarVenda(vendaId: string, motivo: string | undefined, gerenteToken?: string): Promise<VendaResumo> {
+  const { data } = await apiClient.post<VendaResumo>(`/vendas/${vendaId}/cancelar`, { motivo }, configGerente(gerenteToken))
+  return data
+}
+
+export interface ListagemVendas {
+  items: VendaResumo[]
+  total: number
+  pagina: number
+  porPagina: number
+}
+
+export async function listarVendas(params: { status?: string; pagina?: number } = {}): Promise<ListagemVendas> {
+  const { data } = await apiClient.get<ListagemVendas>('/vendas', { params })
+  return data
 }

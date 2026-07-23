@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { VendasService } from './vendas.service';
 
 describe('VendasService', () => {
@@ -12,12 +12,17 @@ describe('VendasService', () => {
       update: jest.Mock;
       delete: jest.Mock;
     };
+    caixa: { findFirst: jest.Mock };
+    pagamentoVenda: { create: jest.Mock };
+    logAuditoria: { create: jest.Mock };
   };
   let prisma: {
     $transaction: jest.Mock;
-    venda: { findFirst: jest.Mock; create: jest.Mock; delete: jest.Mock };
+    venda: { findFirst: jest.Mock; create: jest.Mock; delete: jest.Mock; count: jest.Mock; findMany: jest.Mock };
     produtoVariacao: { findFirst: jest.Mock; findMany: jest.Mock };
   };
+  let estoqueService: { aplicarNaVenda: jest.Mock; estornarVenda: jest.Mock };
+  let paymentGateway: { confirmar: jest.Mock };
   let service: VendasService;
 
   beforeEach(() => {
@@ -31,13 +36,18 @@ describe('VendasService', () => {
         update: jest.fn(),
         delete: jest.fn(),
       },
+      caixa: { findFirst: jest.fn() },
+      pagamentoVenda: { create: jest.fn() },
+      logAuditoria: { create: jest.fn() },
     };
     prisma = {
       $transaction: jest.fn((cb) => cb(tx)),
-      venda: { findFirst: jest.fn(), create: jest.fn(), delete: jest.fn() },
+      venda: { findFirst: jest.fn(), create: jest.fn(), delete: jest.fn(), count: jest.fn(), findMany: jest.fn() },
       produtoVariacao: { findFirst: jest.fn(), findMany: jest.fn() },
     };
-    service = new VendasService(prisma as any);
+    estoqueService = { aplicarNaVenda: jest.fn(), estornarVenda: jest.fn() };
+    paymentGateway = { confirmar: jest.fn().mockResolvedValue({ transacaoGatewayId: 'gtw-1' }) };
+    service = new VendasService(prisma as any, estoqueService as any, paymentGateway as any);
   });
 
   const variacao = (over = {}) => ({
@@ -248,6 +258,188 @@ describe('VendasService', () => {
         service.descartar('loja-1', 'u1', 'venda-1'),
       ).rejects.toThrow(NotFoundException);
       expect(prisma.venda.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('finalizar', () => {
+    const vendaComItens = {
+      ...vendaAberta,
+      total: 20,
+      itens: [{ produtoVariacaoId: 'v1', quantidade: 2 }],
+    };
+
+    function prepararFinalizar() {
+      tx.venda.findFirst.mockResolvedValue(vendaComItens);
+      tx.caixa.findFirst.mockResolvedValue({ id: 'caixa-1' });
+      tx.venda.update.mockImplementation(({ data }) => ({
+        id: 'venda-1',
+        status: data.status,
+        subtotal: 20,
+        desconto: 0,
+        total: 20,
+        troco: data.troco,
+        criadoEm: new Date(),
+        finalizadoEm: data.finalizadoEm,
+        canceladoEm: null,
+        canceladoMotivo: null,
+        itens: vendaComItens.itens,
+        pagamentos: [],
+      }));
+    }
+
+    it('finaliza no dinheiro exato, sem troco, e baixa o estoque', async () => {
+      prepararFinalizar();
+
+      const r = await service.finalizar('loja-1', 'u1', 'venda-1', {
+        pagamentos: [{ forma: 'DINHEIRO' as any, valor: 20 }],
+      });
+
+      expect(estoqueService.aplicarNaVenda).toHaveBeenCalledWith(tx, 'loja-1', 'u1', 'v1', 2, 'venda-1');
+      expect(tx.pagamentoVenda.create).toHaveBeenCalledWith({
+        data: { vendaId: 'venda-1', forma: 'DINHEIRO', valor: 20, transacaoGatewayId: null },
+      });
+      expect(tx.venda.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: 'FINALIZADA', caixaId: 'caixa-1', troco: 0 }) }),
+      );
+      expect(r.troco).toBe(0);
+    });
+
+    it('calcula o troco quando o dinheiro recebido excede o total e não deixa o troco inflar o caixa', async () => {
+      prepararFinalizar();
+
+      await service.finalizar('loja-1', 'u1', 'venda-1', {
+        pagamentos: [{ forma: 'DINHEIRO' as any, valor: 25 }],
+      });
+
+      expect(tx.venda.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ troco: 5 }) }));
+      // PagamentoVenda registra só o que fica no caixa (20), não o valor bruto
+      // entregue pelo cliente (25) — o troco (5) não pode virar saldo.
+      expect(tx.pagamentoVenda.create).toHaveBeenCalledWith({
+        data: { vendaId: 'venda-1', forma: 'DINHEIRO', valor: 20, transacaoGatewayId: null },
+      });
+    });
+
+    it('rejeita a mesma forma de pagamento informada duas vezes', async () => {
+      prepararFinalizar();
+
+      await expect(
+        service.finalizar('loja-1', 'u1', 'venda-1', {
+          pagamentos: [
+            { forma: 'DINHEIRO' as any, valor: 10 },
+            { forma: 'DINHEIRO' as any, valor: 10 },
+          ],
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('divide entre cartão e dinheiro sem gerar troco indevido', async () => {
+      prepararFinalizar();
+
+      await service.finalizar('loja-1', 'u1', 'venda-1', {
+        pagamentos: [
+          { forma: 'CARTAO' as any, valor: 12 },
+          { forma: 'DINHEIRO' as any, valor: 8 },
+        ],
+      });
+
+      expect(paymentGateway.confirmar).toHaveBeenCalledWith({ forma: 'CARTAO', valor: 12 });
+      expect(tx.venda.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ troco: 0 }) }));
+    });
+
+    it('rejeita cartão/Pix que excede o total (não gera troco)', async () => {
+      prepararFinalizar();
+
+      await expect(
+        service.finalizar('loja-1', 'u1', 'venda-1', { pagamentos: [{ forma: 'CARTAO' as any, valor: 25 }] }),
+      ).rejects.toThrow(BadRequestException);
+      expect(estoqueService.aplicarNaVenda).not.toHaveBeenCalled();
+    });
+
+    it('rejeita valor pago menor que o total', async () => {
+      prepararFinalizar();
+
+      await expect(
+        service.finalizar('loja-1', 'u1', 'venda-1', { pagamentos: [{ forma: 'DINHEIRO' as any, valor: 10 }] }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejeita finalizar sem caixa aberto', async () => {
+      tx.venda.findFirst.mockResolvedValue(vendaComItens);
+      tx.caixa.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.finalizar('loja-1', 'u1', 'venda-1', { pagamentos: [{ forma: 'DINHEIRO' as any, valor: 20 }] }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejeita finalizar venda sem itens', async () => {
+      tx.venda.findFirst.mockResolvedValue({ ...vendaAberta, total: 0, itens: [] });
+
+      await expect(
+        service.finalizar('loja-1', 'u1', 'venda-1', { pagamentos: [{ forma: 'DINHEIRO' as any, valor: 0 }] }),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('cancelar', () => {
+    it('estorna o estoque de cada item e marca a venda como CANCELADA', async () => {
+      tx.venda.findFirst.mockResolvedValue({
+        ...vendaAberta,
+        status: 'FINALIZADA',
+        itens: [{ produtoVariacaoId: 'v1', quantidade: 2 }],
+      });
+      tx.venda.update.mockImplementation(({ data }) => ({
+        id: 'venda-1',
+        status: data.status,
+        subtotal: 20,
+        desconto: 0,
+        total: 20,
+        troco: 0,
+        criadoEm: new Date(),
+        finalizadoEm: new Date(),
+        canceladoEm: data.canceladoEm,
+        canceladoMotivo: data.canceladoMotivo,
+        itens: [],
+        pagamentos: [],
+      }));
+
+      const r = await service.cancelar('loja-1', 'gerente-1', 'venda-1', { motivo: 'cliente desistiu' });
+
+      expect(estoqueService.estornarVenda).toHaveBeenCalledWith(tx, 'loja-1', 'gerente-1', 'v1', 2, 'venda-1');
+      expect(tx.logAuditoria.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ acao: 'VENDA_CANCELADA' }) }),
+      );
+      expect(r.status).toBe('CANCELADA');
+    });
+
+    it('rejeita cancelar venda que não está finalizada', async () => {
+      tx.venda.findFirst.mockResolvedValue(null);
+
+      await expect(service.cancelar('loja-1', 'gerente-1', 'venda-1', {})).rejects.toThrow(NotFoundException);
+      expect(estoqueService.estornarVenda).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('listar', () => {
+    it('lista vendas da loja com paginação', async () => {
+      prisma.venda.count.mockResolvedValue(1);
+      prisma.venda.findMany.mockResolvedValue([
+        { ...vendaAberta, status: 'FINALIZADA', total: 20, subtotal: 20, desconto: 0, troco: 0, criadoEm: new Date(), finalizadoEm: new Date(), canceladoEm: null, canceladoMotivo: null, itens: [], pagamentos: [], operador: { nome: 'Fulano' } },
+      ]);
+
+      const r = await service.listar('loja-1', {});
+
+      expect(prisma.venda.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { lojaId: 'loja-1' }, skip: 0, take: 20 }));
+      expect(r.items[0].operador).toBe('Fulano');
+      expect(r.total).toBe(1);
+    });
+  });
+
+  describe('buscarPorId', () => {
+    it('rejeita venda de outra loja', async () => {
+      prisma.venda.findFirst.mockResolvedValue(null);
+
+      await expect(service.buscarPorId('loja-1', 'venda-1')).rejects.toThrow(NotFoundException);
     });
   });
 

@@ -1,8 +1,18 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { StatusVenda } from '../generated/prisma/enums';
-import { AdicionarItemDto, AtualizarItemDto } from './dto/venda.dto';
+import { EstoqueService } from '../estoque/estoque.service';
+import { StatusCaixa, StatusVenda, FormaPagamento } from '../generated/prisma/enums';
+import { PAYMENT_GATEWAY, type PaymentGateway } from './payment-gateway';
+import {
+  AdicionarItemDto,
+  AtualizarItemDto,
+  CancelarVendaDto,
+  FinalizarVendaDto,
+  ListarVendasQueryDto,
+} from './dto/venda.dto';
 import { mapVenda } from './venda.mapper';
+
+const POR_PAGINA_PADRAO = 20;
 
 const LIMITE_BUSCA = 20;
 
@@ -19,7 +29,11 @@ function descrever(produtoNome: string, variacaoNome: string): string {
 
 @Injectable()
 export class VendasService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly estoqueService: EstoqueService,
+    @Inject(PAYMENT_GATEWAY) private readonly paymentGateway: PaymentGateway,
+  ) {}
 
   // Uma venda ABERTA por operador na loja. Bipar um item numa segunda aba ou
   // depois de um F5 continua o mesmo carrinho em vez de criar outro.
@@ -138,10 +152,161 @@ export class VendasService {
 
   // Carrinho abandonado não é evento de negócio (nada saiu do estoque, nada
   // entrou no caixa): apaga a venda em vez de deixar rascunho no histórico.
-  // O CANCELADA do enum é para venda já finalizada (feature 6).
   async descartar(lojaId: string, operadorId: string, vendaId: string) {
     await this.exigirVendaAberta(this.prisma, lojaId, operadorId, vendaId);
     await this.prisma.venda.delete({ where: { id: vendaId } });
+  }
+
+  // Pagamento + baixa de estoque + vínculo com o caixa aberto, tudo na mesma
+  // transação (ou tudo commita, ou nada muda). Só dinheiro gera troco — cartão
+  // e Pix não podem exceder o total (o adquirente não devolve troco).
+  async finalizar(lojaId: string, operadorId: string, vendaId: string, dto: FinalizarVendaDto) {
+    return this.prisma.$transaction(async (tx) => {
+      const venda = await tx.venda.findFirst({
+        where: { id: vendaId, lojaId, operadorId, status: StatusVenda.ABERTA },
+        include: { itens: true },
+      });
+      if (!venda) {
+        throw new NotFoundException('Venda aberta não encontrada');
+      }
+      if (venda.itens.length === 0) {
+        throw new BadRequestException('Venda sem itens não pode ser finalizada');
+      }
+
+      const caixa = await tx.caixa.findFirst({ where: { lojaId, status: StatusCaixa.ABERTO } });
+      if (!caixa) {
+        throw new NotFoundException('Nenhum caixa aberto nesta loja');
+      }
+
+      const porForma = new Map<FormaPagamento, number>();
+      for (const pagamento of dto.pagamentos) {
+        if (porForma.has(pagamento.forma)) {
+          throw new BadRequestException('Informe cada forma de pagamento uma única vez');
+        }
+        porForma.set(pagamento.forma, pagamento.valor);
+      }
+
+      const total = Number(venda.total);
+      const valorCartao = porForma.get(FormaPagamento.CARTAO) ?? 0;
+      const valorPix = porForma.get(FormaPagamento.PIX) ?? 0;
+      const emOutrasFormas = dinheiro(valorCartao + valorPix);
+      if (emOutrasFormas > total) {
+        throw new BadRequestException('Pagamento em cartão/Pix não pode exceder o total da venda');
+      }
+      const dinheiroInformado = porForma.get(FormaPagamento.DINHEIRO) ?? 0;
+      const faltaCobrirEmDinheiro = dinheiro(total - emOutrasFormas);
+      if (dinheiroInformado < faltaCobrirEmDinheiro) {
+        throw new BadRequestException('Valor pago é menor que o total da venda');
+      }
+      const troco = dinheiro(dinheiroInformado - faltaCobrirEmDinheiro);
+
+      // Baixa de estoque por item, na mesma transação da venda — se algum item
+      // não tiver estoque suficiente, tudo é revertido (nenhum pagamento fica
+      // registrado, nenhum estoque é alterado).
+      for (const item of venda.itens) {
+        await this.estoqueService.aplicarNaVenda(tx, lojaId, operadorId, item.produtoVariacaoId, Number(item.quantidade), vendaId);
+      }
+
+      // O PagamentoVenda registra o valor que fica no caixa/gateway — nunca o
+      // valor bruto que o cliente entregou. Em dinheiro isso é só a parte que
+      // cobriu o total (faltaCobrirEmDinheiro); o troco devolvido não é
+      // receita e não pode inflar o saldo do caixa (ver CaixaService.saldoEmDinheiro).
+      if (valorCartao > 0) {
+        const { transacaoGatewayId } = await this.paymentGateway.confirmar({ forma: FormaPagamento.CARTAO, valor: valorCartao });
+        await tx.pagamentoVenda.create({ data: { vendaId, forma: FormaPagamento.CARTAO, valor: valorCartao, transacaoGatewayId } });
+      }
+      if (valorPix > 0) {
+        const { transacaoGatewayId } = await this.paymentGateway.confirmar({ forma: FormaPagamento.PIX, valor: valorPix });
+        await tx.pagamentoVenda.create({ data: { vendaId, forma: FormaPagamento.PIX, valor: valorPix, transacaoGatewayId } });
+      }
+      if (faltaCobrirEmDinheiro > 0) {
+        await tx.pagamentoVenda.create({
+          data: { vendaId, forma: FormaPagamento.DINHEIRO, valor: faltaCobrirEmDinheiro, transacaoGatewayId: null },
+        });
+      }
+
+      const finalizada = await tx.venda.update({
+        where: { id: vendaId },
+        data: { status: StatusVenda.FINALIZADA, caixaId: caixa.id, troco, finalizadoEm: new Date() },
+        include: { itens: true, pagamentos: true },
+      });
+      return mapVenda(finalizada);
+    });
+  }
+
+  // Cancelamento de venda finalizada exige código de gerente (ver GerenteGuard
+  // na rota). Estorna o estoque; o caixa se ajusta sozinho porque o saldo em
+  // dinheiro (CaixaService.saldoEmDinheiro) só soma pagamentos de vendas com
+  // status FINALIZADA — uma venda CANCELADA some do cálculo automaticamente.
+  async cancelar(lojaId: string, aprovadorId: string, vendaId: string, dto: CancelarVendaDto) {
+    return this.prisma.$transaction(async (tx) => {
+      const venda = await tx.venda.findFirst({
+        where: { id: vendaId, lojaId, status: StatusVenda.FINALIZADA },
+        include: { itens: true },
+      });
+      if (!venda) {
+        throw new NotFoundException('Venda finalizada não encontrada');
+      }
+
+      for (const item of venda.itens) {
+        await this.estoqueService.estornarVenda(tx, lojaId, aprovadorId, item.produtoVariacaoId, Number(item.quantidade), vendaId);
+      }
+
+      const cancelada = await tx.venda.update({
+        where: { id: vendaId },
+        data: {
+          status: StatusVenda.CANCELADA,
+          canceladoEm: new Date(),
+          canceladoMotivo: dto.motivo,
+          canceladoAprovadorId: aprovadorId,
+        },
+        include: { itens: true, pagamentos: true },
+      });
+
+      await tx.logAuditoria.create({
+        data: {
+          lojaId,
+          usuarioId: aprovadorId,
+          acao: 'VENDA_CANCELADA',
+          entidade: 'Venda',
+          entidadeId: vendaId,
+          valorAnterior: { status: 'FINALIZADA' },
+          valorNovo: { status: 'CANCELADA', motivo: dto.motivo ?? null },
+        },
+      });
+
+      return mapVenda(cancelada);
+    });
+  }
+
+  async listar(lojaId: string, query: ListarVendasQueryDto) {
+    const pagina = query.pagina ?? 1;
+    const porPagina = query.porPagina ?? POR_PAGINA_PADRAO;
+    const where = { lojaId, ...(query.status ? { status: query.status } : {}) };
+
+    const [total, vendas] = await Promise.all([
+      this.prisma.venda.count({ where }),
+      this.prisma.venda.findMany({
+        where,
+        include: { operador: true },
+        orderBy: { criadoEm: 'desc' },
+        skip: (pagina - 1) * porPagina,
+        take: porPagina,
+      }),
+    ]);
+
+    return { items: vendas.map(mapVenda), total, pagina, porPagina };
+  }
+
+  async buscarPorId(lojaId: string, id: string) {
+    const venda = await this.prisma.venda.findFirst({
+      where: { id, lojaId },
+      include: { itens: true, pagamentos: true, operador: true },
+    });
+    if (!venda) {
+      throw new NotFoundException('Venda não encontrada');
+    }
+    return mapVenda(venda);
   }
 
   // Leitura do leitor HID: código de barras exato entra direto no carrinho;

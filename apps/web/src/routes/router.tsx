@@ -12,6 +12,7 @@ import { CategoriasPage } from '@/pages/categorias/categorias-page'
 import { EstoquePage } from '@/pages/estoque/estoque-page'
 import { CaixaPage } from '@/pages/caixa/caixa-page'
 import { VendaPage } from '@/pages/venda/venda-page'
+import { HistoricoVendasPage } from '@/pages/venda/historico-vendas-page'
 
 export const router = createBrowserRouter([
   {
@@ -32,6 +33,7 @@ export const router = createBrowserRouter([
           { path: '/', element: <HomePage /> },
           // Venda: Admin e Vendedor — é a tela de frente de caixa.
           { path: '/venda', element: <VendaPage /> },
+          { path: '/vendas/historico', element: <HistoricoVendasPage /> },
           { path: '/produtos', element: <ProdutosPage /> },
           // Estoque e Caixa: Admin e Vendedor.
           { path: '/estoque', element: <EstoquePage /> },

@@ -18,6 +18,46 @@ Formato de cada entrada:
 
 <!-- Novas entradas entram abaixo desta linha, mais recente no topo -->
 
+## [Pagamento e fechamento da venda] - 2026-07-22
+### Adicionado
+- Backend: `POST /vendas/:id/finalizar` (pagamento dividido entre dinheiro/cartão/Pix, baixa
+  de estoque e vínculo com o caixa aberto, tudo na mesma transação), `POST /vendas/:id/cancelar`
+  (venda finalizada, exige código de gerente, estorna estoque), `GET /vendas` (histórico
+  paginado, filtro por status) e `GET /vendas/:id` (detalhe com pagamentos).
+- Interface `PaymentGateway` com implementação `ManualPaymentGateway` (confirmação manual, sem
+  chamada externa) — pronta para trocar por integração real de adquirente (Stone/Cielo/GetNet/
+  PagSeguro) sem mudar `VendasService`.
+- `EstoqueService` ganhou `aplicarNaVenda`/`estornarVenda`, tx-scoped, reaproveitando a mesma
+  lógica de entrada/saída/ajuste já existente — baixa e estorno de venda commitam com a venda
+  numa única transação.
+- Frontend: diálogo de finalização (dinheiro/cartão/Pix com troco calculado ao vivo, recibo com
+  os pagamentos e o troco, "Nova venda" reabre o carrinho); diálogo de cancelamento (código de
+  gerente para Vendedor, livre para Admin); página **Histórico de vendas** (`/vendas/historico`)
+  listando vendas finalizadas com ação de cancelar.
+- 14 testes de backend + 6 de frontend novos.
+### Decisões técnicas
+- Só dinheiro gera troco: pagamento em cartão/Pix que excede o total é rejeitado (400) — o
+  adquirente não devolve troco. Cada forma de pagamento só pode ser informada uma vez.
+- **Correção pega no smoke test manual**: `PagamentoVenda` registra o valor que efetivamente
+  fica no caixa (o que cobriu o total), não o valor bruto que o cliente entregou. Gravar o
+  bruto inflava `CaixaService.saldoEmDinheiro` pelo valor do troco (ex.: cliente paga R$20 por
+  uma compra de R$13, o caixa fica com R$13, não R$20). Descoberto validando o fluxo completo
+  contra Postgres real via curl, antes de fechar a feature.
+- Cancelamento não lança um estorno financeiro separado no caixa: como o saldo em dinheiro só
+  soma pagamentos de vendas `FINALIZADA`, mudar o status para `CANCELADA` já remove o valor do
+  cálculo automaticamente.
+- Baixa/estorno de estoque, pagamento e atualização da venda dividem a mesma transação do
+  Prisma — se faltar estoque em qualquer item, tudo é revertido (nenhum pagamento é gravado).
+### Critério de aceite
+- `npm test` verde (`apps/api`: 102, `apps/web`: 58); `build`/`lint` limpos.
+- Validado por `curl` de ponta a ponta contra banco real: finalizar sem caixa aberto (404),
+  finalizar com troco em dinheiro, baixa de estoque conferida antes/depois, divisão em três
+  formas (cartão + Pix + dinheiro) sem troco, forma de pagamento duplicada rejeitada (400),
+  cancelamento pelo Admin sem código, cancelamento pelo Vendedor exigindo e validando o código
+  de gerente, estoque estornado após cancelamento, saldo do caixa se ajustando sozinho
+  (soma a venda ativa, remove a cancelada), histórico geral e filtrado por status, detalhe de
+  venda inexistente retornando 404.
+
 ## [Venda: carrinho (sem pagamento)] - 2026-07-22
 ### Adicionado
 - Backend `VendasModule`: `POST /vendas/abrir` (reaproveita a venda `ABERTA` existente do

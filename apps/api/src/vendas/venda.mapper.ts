@@ -19,14 +19,27 @@ interface ItemVendaPrisma {
   total: unknown;
 }
 
+interface PagamentoVendaPrisma {
+  id: string;
+  forma: string;
+  valor: unknown;
+  transacaoGatewayId: string | null;
+}
+
 interface VendaPrisma {
   id: string;
   status: string;
   subtotal: unknown;
   desconto: unknown;
   total: unknown;
+  troco: unknown;
   criadoEm: Date;
+  finalizadoEm: Date | null;
+  canceladoEm: Date | null;
+  canceladoMotivo: string | null;
   itens?: ItemVendaPrisma[];
+  pagamentos?: PagamentoVendaPrisma[];
+  operador?: { nome: string };
 }
 
 export function mapItemVenda(i: ItemVendaPrisma) {
@@ -40,6 +53,15 @@ export function mapItemVenda(i: ItemVendaPrisma) {
   };
 }
 
+export function mapPagamento(p: PagamentoVendaPrisma) {
+  return {
+    id: p.id,
+    forma: p.forma,
+    valor: paraNumero(p.valor),
+    transacaoGatewayId: p.transacaoGatewayId,
+  };
+}
+
 export function mapVenda(v: VendaPrisma) {
   const itens = (v.itens ?? []).map(mapItemVenda);
   return {
@@ -48,8 +70,14 @@ export function mapVenda(v: VendaPrisma) {
     subtotal: paraNumero(v.subtotal),
     desconto: paraNumero(v.desconto),
     total: paraNumero(v.total),
+    troco: paraNumero(v.troco),
     criadoEm: v.criadoEm,
+    finalizadoEm: v.finalizadoEm,
+    canceladoEm: v.canceladoEm,
+    canceladoMotivo: v.canceladoMotivo,
     quantidadeItens: itens.reduce((soma, i) => soma + i.quantidade, 0),
     itens,
+    pagamentos: (v.pagamentos ?? []).map(mapPagamento),
+    operador: v.operador?.nome ?? null,
   };
 }

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { VendaPage } from './venda-page'
 import * as vendasService from '@/services/vendas-service'
@@ -12,7 +13,9 @@ function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(
     <QueryClientProvider client={queryClient}>
-      <VendaPage />
+      <MemoryRouter>
+        <VendaPage />
+      </MemoryRouter>
     </QueryClientProvider>,
   )
 }
@@ -23,9 +26,15 @@ const vendaVazia: VendaResumo = {
   subtotal: 0,
   desconto: 0,
   total: 0,
+  troco: 0,
   criadoEm: '2026-07-22T10:00:00Z',
+  finalizadoEm: null,
+  canceladoEm: null,
+  canceladoMotivo: null,
   quantidadeItens: 0,
   itens: [],
+  pagamentos: [],
+  operador: null,
 }
 
 const item = {
