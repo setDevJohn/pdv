@@ -295,7 +295,25 @@ export class VendasService {
       }),
     ]);
 
-    return { items: vendas.map(mapVenda), total, pagina, porPagina };
+    // A listagem não carrega `itens` (evita puxar todo item de toda venda só
+    // pra exibir uma contagem) — soma a quantidade à parte, só para as vendas
+    // desta página. mapVenda() sozinho zeraria quantidadeItens aqui, já que
+    // deriva do array de itens que não veio na query acima.
+    const somaPorVenda = vendas.length
+      ? await this.prisma.itemVenda.groupBy({
+          by: ['vendaId'],
+          where: { vendaId: { in: vendas.map((v) => v.id) } },
+          _sum: { quantidade: true },
+        })
+      : [];
+    const quantidadePorVenda = new Map(somaPorVenda.map((s) => [s.vendaId, Number(s._sum.quantidade ?? 0)]));
+
+    return {
+      items: vendas.map((v) => ({ ...mapVenda(v), quantidadeItens: quantidadePorVenda.get(v.id) ?? 0 })),
+      total,
+      pagina,
+      porPagina,
+    };
   }
 
   async buscarPorId(lojaId: string, id: string) {

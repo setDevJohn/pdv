@@ -18,6 +18,24 @@ Formato de cada entrada:
 
 <!-- Novas entradas entram abaixo desta linha, mais recente no topo -->
 
+## [Correção: contagem de itens no histórico de vendas] - 2026-07-22
+### Adicionado
+- Nada (correção de bug, sem feature nova).
+### Decisões técnicas
+- **Bug encontrado em auditoria manual completa do projeto**: `GET /vendas` (histórico) sempre
+  retornava `quantidadeItens: 0` pra toda venda, porque a listagem não carrega o array `itens`
+  (por design, pra não puxar todo item de toda venda só pra exibir uma contagem) e `mapVenda()`
+  deriva `quantidadeItens` desse array — que vinha sempre vazio nesse endpoint específico. A
+  tela de Histórico de vendas mostrava "0" na coluna Itens pra toda venda, mesmo com produtos.
+- Corrigido com uma soma agregada (`itemVenda.groupBy` por `vendaId`) rodada só para a página
+  atual de resultados, sem carregar os itens completos — mantém o mesmo significado de
+  `quantidadeItens` (soma de unidades) usado em todos os outros endpoints de venda.
+### Critério de aceite
+- 2 testes novos (soma agregada aplicada corretamente; não consulta a agregação quando a
+  página está vazia) — `apps/api`: 112 testes, todos verdes.
+- Validado visualmente: histórico mostrava "0" antes da correção, "1" (quantidade real) depois,
+  para a mesma venda.
+
 ## [Recibo térmico via WebUSB] - 2026-07-22
 ### Adicionado
 - Impressão de recibo direto no navegador via WebUSB, sem serviço local instalado (ver

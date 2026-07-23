@@ -20,6 +20,7 @@ describe('VendasService', () => {
     $transaction: jest.Mock;
     venda: { findFirst: jest.Mock; create: jest.Mock; delete: jest.Mock; count: jest.Mock; findMany: jest.Mock };
     produtoVariacao: { findFirst: jest.Mock; findMany: jest.Mock };
+    itemVenda: { groupBy: jest.Mock };
   };
   let estoqueService: { aplicarNaVenda: jest.Mock; estornarVenda: jest.Mock };
   let paymentGateway: { confirmar: jest.Mock };
@@ -44,6 +45,7 @@ describe('VendasService', () => {
       $transaction: jest.fn((cb) => cb(tx)),
       venda: { findFirst: jest.fn(), create: jest.fn(), delete: jest.fn(), count: jest.fn(), findMany: jest.fn() },
       produtoVariacao: { findFirst: jest.fn(), findMany: jest.fn() },
+      itemVenda: { groupBy: jest.fn().mockResolvedValue([]) },
     };
     estoqueService = { aplicarNaVenda: jest.fn(), estornarVenda: jest.fn() };
     paymentGateway = { confirmar: jest.fn().mockResolvedValue({ transacaoGatewayId: 'gtw-1' }) };
@@ -424,7 +426,7 @@ describe('VendasService', () => {
     it('lista vendas da loja com paginação', async () => {
       prisma.venda.count.mockResolvedValue(1);
       prisma.venda.findMany.mockResolvedValue([
-        { ...vendaAberta, status: 'FINALIZADA', total: 20, subtotal: 20, desconto: 0, troco: 0, criadoEm: new Date(), finalizadoEm: new Date(), canceladoEm: null, canceladoMotivo: null, itens: [], pagamentos: [], operador: { nome: 'Fulano' } },
+        { ...vendaAberta, id: 'venda-1', status: 'FINALIZADA', total: 20, subtotal: 20, desconto: 0, troco: 0, criadoEm: new Date(), finalizadoEm: new Date(), canceladoEm: null, canceladoMotivo: null, itens: [], pagamentos: [], operador: { nome: 'Fulano' } },
       ]);
 
       const r = await service.listar('loja-1', {});
@@ -432,6 +434,34 @@ describe('VendasService', () => {
       expect(prisma.venda.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { lojaId: 'loja-1' }, skip: 0, take: 20 }));
       expect(r.items[0].operador).toBe('Fulano');
       expect(r.total).toBe(1);
+    });
+
+    // Bug real pego na auditoria manual: a query de listagem não traz `itens`
+    // (ver comentário no service), então mapVenda() sozinho sempre zerava
+    // quantidadeItens aqui — a tela de histórico mostrava "0" pra toda venda.
+    it('preenche quantidadeItens a partir da soma agregada, não do array de itens (que não vem na query)', async () => {
+      prisma.venda.count.mockResolvedValue(1);
+      prisma.venda.findMany.mockResolvedValue([
+        { ...vendaAberta, id: 'venda-1', status: 'FINALIZADA', total: 19.5, subtotal: 19.5, desconto: 0, troco: 0, criadoEm: new Date(), finalizadoEm: new Date(), canceladoEm: null, canceladoMotivo: null, itens: [], pagamentos: [], operador: { nome: 'Fulano' } },
+      ]);
+      prisma.itemVenda.groupBy.mockResolvedValue([{ vendaId: 'venda-1', _sum: { quantidade: 3 } }]);
+
+      const r = await service.listar('loja-1', {});
+
+      expect(prisma.itemVenda.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({ by: ['vendaId'], where: { vendaId: { in: ['venda-1'] } } }),
+      );
+      expect(r.items[0].quantidadeItens).toBe(3);
+    });
+
+    it('não consulta a soma agregada quando a página está vazia', async () => {
+      prisma.venda.count.mockResolvedValue(0);
+      prisma.venda.findMany.mockResolvedValue([]);
+
+      const r = await service.listar('loja-1', {});
+
+      expect(prisma.itemVenda.groupBy).not.toHaveBeenCalled();
+      expect(r.items).toEqual([]);
     });
   });
 
