@@ -18,6 +18,50 @@ Formato de cada entrada:
 
 <!-- Novas entradas entram abaixo desta linha, mais recente no topo -->
 
+## [Dashboard: vendas, produtos mais vendidos e exportação Excel] - 2026-07-22
+### Adicionado
+- Backend `DashboardModule` (Admin apenas): `GET /dashboard/resumo` (vendas e faturamento de
+  hoje/semana/mês + ticket médio do mês), `GET /dashboard/vendas-por-dia?de&ate` (série diária
+  contínua, preenchendo com zero os dias sem venda), `GET /dashboard/produtos-mais-vendidos?de&ate&limite`
+  (ranking por quantidade) e `GET /dashboard/exportar?de&ate` (planilha `.xlsx` via `exceljs`,
+  com abas "Vendas" e "Produtos mais vendidos").
+- Frontend: `HomePage` mostra o dashboard completo pra Admin (stat tiles de resumo, gráfico de
+  barras de vendas por dia com tooltip e alternância para tabela, ranking de produtos mais
+  vendidos, filtro de período com atalhos de 7/30/90 dias e botão de exportar); Vendedor mantém
+  a tela de boas-vindas simples.
+- 8 testes de backend + 9 de frontend novos.
+### Decisões técnicas
+- Dashboard é dado financeiro/gerencial — Admin apenas (Vendedor tem só venda e consultas de
+  produto/estoque, ver docs/07-escopo-fechado.md).
+- **Bug de fuso horário pego durante o teste manual**: `new Date('2026-07-20')` interpreta a
+  string como UTC; num fuso negativo (Brasil, UTC-3) isso desloca o filtro de período em um dia
+  inteiro. Corrigido com um parser que monta a data a partir dos componentes ano/mês/dia direto
+  em horário local. Pelo mesmo motivo, o agrupamento por dia de "vendas por dia" é feito em
+  JavaScript (não com `date_trunc` no Postgres) — a sessão do banco poderia truncar num fuso
+  diferente do processo Node, e ambos precisam concordar sobre "que dia é esse".
+- Gráfico de vendas por dia é HTML/CSS simples (sem biblioteca de gráficos): barras de hue único
+  (magnitude, não identidade — não há múltiplas séries), rótulo direto só no dia de pico,
+  tooltip por barra controlado por estado React (não `group-hover` do Tailwind — ver nota
+  abaixo) e alternância para visão em tabela (acessibilidade). Segue o skill de dataviz do
+  projeto (`choosing-a-form`/`marks-and-anatomy`/`interaction`).
+- **Dois bugs de UI pegos na revisão visual (screenshot via Puppeteer, Chrome real)**: (1) o
+  rótulo do dia de pico usava `truncate` numa coluna mais estreita que o texto do valor em R$,
+  cortando pra "R$ …" — trocado por texto que vaza pros lados sem cortar. (2) o tooltip de hover
+  usava `group-hover/nome:` do Tailwind dentro de um contêiner com `overflow-x-auto`; o spec de
+  CSS Overflow manda o navegador computar `overflow-y` como `auto` também quando só `overflow-x`
+  é definido, cortando o tooltip que aparece acima da barra. Trocado o hover por estado React
+  (`onMouseEnter`/`onFocus`) e removido o `overflow-x-auto` (a largura da barra já encolhe pra
+  caber em ~640px em qualquer contagem de dias, então nunca precisa de scroll horizontal).
+### Critério de aceite
+- `npm test` verde (`apps/api`: 110, `apps/web`: 67); `build`/`lint` limpos.
+- Validado por `curl` contra banco real: Vendedor recebe 403 no dashboard, resumo correto antes
+  e depois de uma venda finalizada (reflete nas três janelas), série de vendas por dia com dias
+  sem venda zerados e sem deslocamento de data, ranking de produtos mais vendidos, planilha
+  `.xlsx` baixada e lida de volta (via `exceljs`) confirmando as duas abas com os dados certos.
+- Validado visualmente em Chrome real (Puppeteer, login completo até o dashboard): stat tiles,
+  gráfico de barras com dias reais espalhados ao longo de ~10 dias, rótulo do pico legível,
+  tooltip de hover visível, alternância gráfico/tabela funcionando, ranking de produtos.
+
 ## [Pagamento e fechamento da venda] - 2026-07-22
 ### Adicionado
 - Backend: `POST /vendas/:id/finalizar` (pagamento dividido entre dinheiro/cartão/Pix, baixa

@@ -13,6 +13,7 @@ import { ProdutosModule } from './produtos/produtos.module';
 import { EstoqueModule } from './estoque/estoque.module';
 import { CaixaModule } from './caixa/caixa.module';
 import { VendasModule } from './vendas/vendas.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { VendasModule } from './vendas/vendas.module';
     EstoqueModule,
     CaixaModule,
     VendasModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
